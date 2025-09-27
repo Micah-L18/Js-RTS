@@ -54,7 +54,6 @@ class ResourceManager {
         
         // Update UI
         this.updateUI();
-        
         this.lastUpdateTime = currentTime;
     }
     
@@ -86,7 +85,7 @@ class ResourceManager {
             !entity.isUnderConstruction
         );
         
-        this.maxPopulation = 25 + (barracks.length * 5); // 25 + 5 per barracks
+        this.maxPopulation = Math.min(50, 25 + (barracks.length * 5)); // 25 + 5 per barracks, max 50
     }
     
     updatePopulation() {

@@ -39,6 +39,10 @@ class InputHandler {
         this.multiSelect = false;
         this.clickedOnEntity = false;
         
+        // Movement indicators
+        this.movementTargets = []; // Array of {position: Vector2, timestamp: number}
+        this.movementIndicatorDuration = 2000; // 2 seconds
+        
         this.init();
     }
     
@@ -78,7 +82,7 @@ class InputHandler {
     update(deltaTime) {
         this.updateKeyboardInput(deltaTime);
         this.updateEdgeScrolling(deltaTime);
-        this.updateWorldMousePosition();
+        this.updateMovementTargets();
     }
     
     updateKeyboardInput(deltaTime) {
@@ -123,6 +127,7 @@ class InputHandler {
         e.preventDefault();
         
         this.updateMousePosition(e);
+        this.updateWorldMousePosition(); // Fix: Update world coordinates too
         this.isMouseDown = true;
         this.dragStart = this.mousePos.clone();
         this.multiSelect = e.ctrlKey || e.shiftKey;
@@ -136,6 +141,7 @@ class InputHandler {
     
     onMouseMove(e) {
         this.updateMousePosition(e);
+        this.updateWorldMousePosition(); // Update world coordinates on mouse move too
         
         if (this.isMouseDown && !this.clickedOnEntity) {
             const distance = this.mousePos.distance(this.dragStart);
@@ -403,6 +409,9 @@ class InputHandler {
                 // Calculate formation positions first
                 const formationPositions = this.calculateFormationPositions(playerUnits, target);
                 
+                // Add movement target indicator
+                this.addMovementTarget(target);
+                
                 // Move units locally and send their actual destinations
                 playerUnits.forEach((unit, index) => {
                     const unitDestination = formationPositions[index];
@@ -471,6 +480,20 @@ class InputHandler {
         });
     }
     
+    addMovementTarget(position) {
+        this.movementTargets.push({
+            position: position.clone(),
+            timestamp: Date.now()
+        });
+    }
+    
+    updateMovementTargets() {
+        const currentTime = Date.now();
+        this.movementTargets = this.movementTargets.filter(target => 
+            currentTime - target.timestamp < this.movementIndicatorDuration
+        );
+    }
+    
     clearUnitSelection() {
         this.engine.entities.forEach(entity => {
             if (entity instanceof Unit) {
@@ -537,6 +560,9 @@ class InputHandler {
             ctx.restore();
         }
         
+        // Render movement target indicators
+        this.renderMovementTargets(ctx);
+        
         // Debug: render mouse crosshair in world space
         if (this.engine.showDebug && this.worldMousePos) {
             ctx.strokeStyle = '#ff00ff';
@@ -550,5 +576,60 @@ class InputHandler {
             ctx.lineTo(this.worldMousePos.x + 10, this.worldMousePos.y);
             ctx.stroke();
         }
+    }
+    
+    renderMovementTargets(ctx) {
+        const currentTime = Date.now();
+        
+        this.movementTargets.forEach(target => {
+            const age = currentTime - target.timestamp;
+            const progress = age / this.movementIndicatorDuration;
+            const alpha = Math.max(0, 1 - progress);
+            
+            if (alpha > 0) {
+                ctx.save();
+                
+                // Animated expanding circle
+                const baseRadius = 15;
+                const maxRadius = 25;
+                const radius = baseRadius + (maxRadius - baseRadius) * progress;
+                
+                // Main circle
+                ctx.strokeStyle = `rgba(0, 255, 0, ${alpha})`;
+                ctx.fillStyle = `rgba(0, 255, 0, ${alpha * 0.2})`;
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.arc(target.position.x, target.position.y, radius, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.stroke();
+                
+                // Inner dot
+                ctx.fillStyle = `rgba(0, 255, 0, ${alpha})`;
+                ctx.beginPath();
+                ctx.arc(target.position.x, target.position.y, 3, 0, Math.PI * 2);
+                ctx.fill();
+                
+                // Directional arrows (4 small arrows pointing outward)
+                const arrowLength = 8;
+                const arrowRadius = radius + 5;
+                for (let i = 0; i < 4; i++) {
+                    const angle = (i * Math.PI * 0.5) + (progress * Math.PI * 0.25); // Slight rotation animation
+                    const arrowX = target.position.x + Math.cos(angle) * arrowRadius;
+                    const arrowY = target.position.y + Math.sin(angle) * arrowRadius;
+                    
+                    ctx.strokeStyle = `rgba(255, 255, 0, ${alpha})`;
+                    ctx.lineWidth = 2;
+                    ctx.beginPath();
+                    ctx.moveTo(arrowX - Math.cos(angle) * arrowLength, arrowY - Math.sin(angle) * arrowLength);
+                    ctx.lineTo(arrowX, arrowY);
+                    ctx.lineTo(arrowX - Math.cos(angle + 0.5) * arrowLength * 0.6, arrowY - Math.sin(angle + 0.5) * arrowLength * 0.6);
+                    ctx.moveTo(arrowX, arrowY);
+                    ctx.lineTo(arrowX - Math.cos(angle - 0.5) * arrowLength * 0.6, arrowY - Math.sin(angle - 0.5) * arrowLength * 0.6);
+                    ctx.stroke();
+                }
+                
+                ctx.restore();
+            }
+        });
     }
 }

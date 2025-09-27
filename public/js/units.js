@@ -37,6 +37,7 @@ class Unit {
         // State
         this.state = 'idle'; // idle, moving, attacking, dead
         this.selected = false;
+        this.savedDestination = null; // Remember destination when interrupted by attack
         
         // Cost and production
         this.supplyCost = 1;
@@ -130,6 +131,44 @@ class Unit {
             return;
         }
         
+        // Check for enemies while moving (attack while moving feature)
+        if (this.canAttack() && window.game && window.game.engine) {
+            const isMyUnit = !window.game.isMultiplayer || this.team === window.game.playerTeam;
+            
+            if (isMyUnit) {
+                const nearbyEnemies = window.game.engine.getEntitiesNear(this.position, this.attackRange)
+                    .filter(entity => 
+                        (entity instanceof Unit || entity instanceof Building) && 
+                        entity.team !== this.team && 
+                        !entity.isDead
+                    );
+                
+                if (nearbyEnemies.length > 0) {
+                    // Prioritize units over buildings
+                    const enemyUnits = nearbyEnemies.filter(e => e instanceof Unit);
+                    const target = enemyUnits.length > 0 ? enemyUnits[0] : nearbyEnemies[0];
+                    
+                    // Save current destination before attacking
+                    this.savedDestination = this.destination;
+                    
+                    this.attackTarget = target;
+                    this.state = 'attacking';
+                    
+                    // Send multiplayer action for attack while moving
+                    if (window.game && window.game.isMultiplayer) {
+                        window.game.sendMultiplayerAction('attack', {
+                            attackerId: this.id,
+                            targetId: target.id,
+                            team: this.team
+                        });
+                    }
+                    
+                    console.log(`${this.constructor.name} attacking while moving: ${target.constructor.name}`);
+                    return; // Switch to attack state
+                }
+            }
+        }
+        
         const distance = this.position.distance(this.destination);
         
         if (distance < 5) {
@@ -159,17 +198,36 @@ class Unit {
     updateAttack(deltaTime) {
         if (!this.attackTarget || this.attackTarget.isDead) {
             this.attackTarget = null;
-            this.state = 'idle';
+            
+            // Resume previous movement if we had a saved destination
+            if (this.savedDestination) {
+                this.destination = this.savedDestination;
+                this.savedDestination = null;
+                this.state = 'moving';
+                console.log(`${this.constructor.name} resuming movement to saved destination`);
+            } else {
+                this.state = 'idle';
+            }
             return;
         }
         
         const distance = this.position.distance(this.attackTarget.position);
         
         if (distance > this.attackRange) {
-            // Move closer to target
-            this.moveTo(this.attackTarget.position);
-            this.state = 'moving';
-            return;
+            // Target moved out of range, resume original movement if we had one
+            if (this.savedDestination) {
+                this.destination = this.savedDestination;
+                this.savedDestination = null;
+                this.attackTarget = null;
+                this.state = 'moving';
+                console.log(`${this.constructor.name} target out of range, resuming movement`);
+                return;
+            } else {
+                // No saved destination, chase the target
+                this.moveTo(this.attackTarget.position);
+                this.state = 'moving';
+                return;
+            }
         }
         
         // Face the target
