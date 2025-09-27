@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Halo Wars JS - RTS Game</title> 
+    <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+    <div id="gameContainer">
+        <!-- Lobby Interface -->
+        <div id="lobbyInterface" class="lobby-interface">
+            <div class="lobby-container">
+                <h1>🎮 Halo Wars JS - Multiplayer</h1>
+                
+                <div id="mainMenu" class="lobby-section">
+                    <div class="nickname-section">
+                        <input type="text" id="nicknameInput" placeholder="Enter your nickname" maxlength="20">
+                    </div>
+                    <button id="createRoomBtn" class="lobby-btn primary">Create Room</button>
+                    <div class="join-room-section">
+                        <input type="text" id="roomCodeInput" placeholder="Enter Room Code" maxlength="6">
+                        <button id="joinRoomBtn" class="lobby-btn secondary">Join Room</button>
+                    </div>
+                </div>
+                
+                <div id="waitingRoom" class="lobby-section" style="display: none;">
+                    <h2>Room: <span id="currentRoomCode"></span></h2>
+                    <div id="playersList">
+                        <div class="player-slot">
+                            <span class="player-name">Player 1</span>
+                            <span class="player-status">Connected</span>
+                        </div>
+                        <div class="player-slot waiting">
+                            <span class="player-name">Waiting for Player 2...</span>
+                            <span class="player-status">-</span>
+                        </div>
+                    </div>
+                    <button id="startGameBtn" class="lobby-btn primary" style="display: none;">Start Game</button>
+                    <button id="leaveRoomBtn" class="lobby-btn secondary">Leave Room</button>
+                </div>
+                
+                <div id="gameStatus" class="lobby-section" style="display: none;">
+                    <h2>Game in Progress</h2>
+                    <p>You are playing as: <span id="playerTeam"></span></p>
+                    <div id="gameEndResult" style="display: none;">
+                        <h3 id="gameResult"></h3>
+                        <button id="returnToMenuBtn" class="lobby-btn primary">Return to Menu</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Full Screen Canvas -->
+        <canvas id="gameCanvas"></canvas>
+        
+        <!-- Game UI (hidden during lobby) -->
+        <div id="gameUI" style="display: none;">
+        
+        <!-- Overlay UI Elements -->
+        
+        <!-- Top Resource Bar -->
+        <div id="topResourceBar" class="top-bar">
+            <div id="resourceDisplay">
+                <div class="resource-item">
+                    <span class="resource-icon">💰</span>
+                    <span class="resource-label">Supplies:</span>
+                    <span id="supplies" class="resource-value">1000</span>
+                </div>
+                <div class="resource-item">
+                    <span class="resource-icon">⚡</span>
+                    <span class="resource-label">Power:</span>
+                    <span id="power" class="resource-value">0</span>
+                </div>
+                <div class="resource-item">
+                    <span class="resource-icon">👥</span>
+                    <span class="resource-label">Population:</span>
+                    <span class="current-pop">0</span>/<span class="max-pop">25</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Minimap -->
+        <div id="minimapPanel" class="overlay-panel minimap-panel">
+            <canvas id="minimapCanvas" width="200" height="150"></canvas>
+            <div class="panel-title">Minimap</div>
+        </div>
+
+        <!-- Unit Selection Card (bottom center) -->
+        <div id="selectionCard" class="overlay-panel selection-card" style="display: none;">
+            <div id="selectedUnitInfo">
+                <div class="unit-portrait">
+                    <div class="unit-icon">🎖️</div>
+                </div>
+                <div class="unit-details">
+                    <h3 id="unitName">Unit Name</h3>
+                    <div id="unitStats"></div>
+                </div>
+                <div class="unit-actions">
+                    <button class="action-btn" id="stopBtn">Stop</button>
+                    <button class="action-btn" id="holdBtn">Hold</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Selected Units Display -->
+        <div id="selectedUnitsDisplay" class="selected-units-display" style="display: none;">
+        </div>
+
+        <!-- Command Panel (bottom right) - hidden by default -->
+        <div id="commandPanel" class="overlay-panel command-panel" style="display: none;">
+            <div class="panel-title">Commands</div>
+            
+            <div class="command-tabs">
+                <button class="tab-btn active" data-tab="units">Units</button>
+                <button class="tab-btn" data-tab="buildings">Buildings</button>
+            </div>
+            
+            <div id="unitsTab" class="command-section active">
+                <div class="command-grid">
+                    <button class="command-btn unit-btn" data-unit="marine">
+                        <div class="btn-icon">🪖</div>
+                        <div class="btn-label">Marine</div>
+                        <div class="btn-cost">50💰 1👥</div>
+                    </button>
+                    <button class="command-btn unit-btn" data-unit="warthog">
+                        <div class="btn-icon">🚗</div>
+                        <div class="btn-label">Warthog</div>
+                        <div class="btn-cost">100💰 1⚡ 3👥</div>
+                    </button>
+                    <button class="command-btn unit-btn" data-unit="scorpion">
+                        <div class="btn-icon">🦂</div>
+                        <div class="btn-label">Scorpion</div>
+                        <div class="btn-cost">150💰 2⚡ 5👥</div>
+                    </button>
+                </div>
+            </div>
+            
+            <div id="buildingsTab" class="command-section">
+                <div class="command-grid">
+                    <button class="command-btn building-btn disabled" data-building="base" disabled title="Base building disabled in multiplayer">
+                        <div class="btn-icon">🏢</div>
+                        <div class="btn-label">Base</div>
+                        <div class="btn-cost">DISABLED</div>
+                    </button>
+                    <button class="command-btn building-btn" data-building="supply">
+                        <div class="btn-icon">📦</div>
+                        <div class="btn-label">Supply</div>
+                        <div class="btn-cost">150💰</div>
+                    </button>
+                    <button class="command-btn building-btn" data-building="barracks">
+                        <div class="btn-icon">🏭</div>
+                        <div class="btn-label">Barracks</div>
+                        <div class="btn-cost">300💰</div>
+                    </button>
+                    <button class="command-btn building-btn" data-building="reactor">
+                        <div class="btn-icon">⚡</div>
+                        <div class="btn-label">Reactor</div>
+                        <div class="btn-cost">250+💰</div>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Debug Panel (top left, hidden by default) -->
+        <div id="debugPanel" class="overlay-panel debug-panel" style="display: none;">
+            <div class="panel-title">Debug Info</div>
+            <div id="debugInfo"></div>
+        </div>
+
+        <!-- Building Selection Modals -->
+        <!-- HQ Modal -->
+        <div id="hqModal" class="building-modal" style="display: none;">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3>🏢 Headquarters</h3>
+                    <button class="modal-close">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <div class="modal-section">
+                        <h4>Units</h4>
+                        <div class="modal-grid">
+                            <button class="modal-btn unit-btn" data-unit="marine">
+                                <div class="btn-icon">🪖</div>
+                                <div class="btn-label">Marine</div>
+                                <div class="btn-cost">50💰 1👥</div>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="modal-section">
+                        <h4>Buildings</h4>
+                        <div class="modal-grid">
+                            <button class="modal-btn building-btn" data-building="supply">
+                                <div class="btn-icon">📦</div>
+                                <div class="btn-label">Supply Depot</div>
+                                <div class="btn-cost">150💰</div>
+                            </button>
+                            <button class="modal-btn building-btn" data-building="barracks">
+                                <div class="btn-icon">🏭</div>
+                                <div class="btn-label">Barracks</div>
+                                <div class="btn-cost">300💰</div>
+                            </button>
+                            <button class="modal-btn building-btn" data-building="reactor">
+                                <div class="btn-icon">⚡</div>
+                                <div class="btn-label">Reactor</div>
+                                <div class="btn-cost">250+💰</div>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Barracks Modal -->
+        <div id="barracksModal" class="building-modal" style="display: none;">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3>🏭 Barracks</h3>
+                    <button class="modal-close">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <div class="modal-section">
+                        <h4>Units</h4>
+                        <div class="modal-grid">
+                            <button class="modal-btn unit-btn" data-unit="marine">
+                                <div class="btn-icon">🪖</div>
+                                <div class="btn-label">Marine</div>
+                                <div class="btn-cost">50💰 1👥</div>
+                            </button>
+                            <button class="modal-btn unit-btn" data-unit="warthog">
+                                <div class="btn-icon">🚗</div>
+                                <div class="btn-label">Warthog</div>
+                                <div class="btn-cost">100💰 1⚡ 3👥</div>
+                            </button>
+                            <button class="modal-btn unit-btn" data-unit="scorpion">
+                                <div class="btn-icon">🦂</div>
+                                <div class="btn-label">Scorpion</div>
+                                <div class="btn-cost">150💰 2⚡ 5👥</div>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        </div> <!-- End Game UI -->
+    </div>
+
+    <!-- Game Scripts -->
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="js/multiplayer.js"></script>
+    <script src="js/math-utils.js"></script>
+    <script src="js/renderer.js"></script>
+    <script src="js/game-engine.js"></script>
+    <script src="js/units.js"></script>
+    <script src="js/buildings.js"></script>
+    <script src="js/resources.js"></script>
+    <script src="js/input-handler.js"></script>
+    <script src="js/game.js"></script>
+</body>
+</html>
