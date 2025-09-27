@@ -24,7 +24,8 @@
                 </div>
                 
                 <div id="waitingRoom" class="lobby-section" style="display: none;">
-                    <h2>Room: <span id="currentRoomCode"></span></h2>
+                    <h2>Room: <span id="currentRoomCode" class="room-code-clickable" title="Click to copy room code"></span> 
+                        <button id="copyRoomCodeBtn" class="copy-btn" title="Copy room code">📋</button></h2>
                     <div id="playersList">
                         <div class="player-slot">
                             <span class="player-name">Player 1</span>
@@ -83,6 +84,32 @@
         <div id="minimapPanel" class="overlay-panel minimap-panel">
             <canvas id="minimapCanvas" width="200" height="150"></canvas>
             <div class="panel-title">Minimap</div>
+        </div>
+
+        <!-- Building Queue Panel -->
+        <div id="buildingQueuePanel" class="overlay-panel building-queue-panel">
+            <div class="panel-title">Building Queue</div>
+            <div id="buildingQueueContent">
+                <div id="currentBuildingInfo" style="display: none;">
+                    <div class="building-queue-item current">
+                        <div class="queue-item-icon">🏗️</div>
+                        <div class="queue-item-info">
+                            <div class="queue-item-name" id="currentBuildingName">-</div>
+                            <div class="queue-item-progress">
+                                <div class="progress-bar">
+                                    <div class="progress-fill" id="currentBuildingProgress" style="width: 0%"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div id="queuedBuildingsList">
+                    <!-- Queued buildings will be dynamically added here -->
+                </div>
+                <div id="emptyQueueMessage" class="empty-queue">
+                    No buildings in queue
+                </div>
+            </div>
         </div>
 
         <!-- Unit Selection Card (bottom center) -->
@@ -203,6 +230,11 @@
                                 <div class="btn-icon">⚡</div>
                                 <div class="btn-label">Reactor</div>
                                 <div class="btn-cost">250+💰</div>
+                            </button>
+                            <button class="modal-btn building-btn" data-building="turret">
+                                <div class="btn-icon">🔫</div>
+                                <div class="btn-label">Turret</div>
+                                <div class="btn-cost">250💰 1⚡</div>
                             </button>
                         </div>
                     </div>

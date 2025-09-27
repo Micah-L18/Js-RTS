@@ -154,6 +154,9 @@ class GameEngine {
         // Render background grid
         this.renderGrid();
         
+        // Render world border
+        this.renderWorldBorder();
+        
         // Render all entities
         this.entities.forEach(entity => {
             if (entity.render) {
@@ -212,6 +215,57 @@ class GameEngine {
             this.ctx.beginPath();
             this.ctx.moveTo(this.camera.x, y);
             this.ctx.lineTo(endX, y);
+            this.ctx.stroke();
+        }
+        
+        this.ctx.globalAlpha = 1;
+    }
+    
+    renderWorldBorder() {
+        // Draw world boundary
+        this.ctx.strokeStyle = '#ff6600';
+        this.ctx.lineWidth = 3;
+        this.ctx.globalAlpha = 0.8;
+        
+        // Main border rectangle
+        this.ctx.strokeRect(0, 0, this.worldWidth, this.worldHeight);
+        
+        // Add warning stripes for visual clarity
+        this.ctx.strokeStyle = '#ffaa00';
+        this.ctx.lineWidth = 1;
+        this.ctx.globalAlpha = 0.4;
+        
+        const stripeSpacing = 20;
+        
+        // Top border stripes
+        for (let x = 0; x < this.worldWidth; x += stripeSpacing * 2) {
+            this.ctx.beginPath();
+            this.ctx.moveTo(x, 0);
+            this.ctx.lineTo(x + stripeSpacing, 0);
+            this.ctx.stroke();
+        }
+        
+        // Bottom border stripes
+        for (let x = 0; x < this.worldWidth; x += stripeSpacing * 2) {
+            this.ctx.beginPath();
+            this.ctx.moveTo(x, this.worldHeight);
+            this.ctx.lineTo(x + stripeSpacing, this.worldHeight);
+            this.ctx.stroke();
+        }
+        
+        // Left border stripes
+        for (let y = 0; y < this.worldHeight; y += stripeSpacing * 2) {
+            this.ctx.beginPath();
+            this.ctx.moveTo(0, y);
+            this.ctx.lineTo(0, y + stripeSpacing);
+            this.ctx.stroke();
+        }
+        
+        // Right border stripes
+        for (let y = 0; y < this.worldHeight; y += stripeSpacing * 2) {
+            this.ctx.beginPath();
+            this.ctx.moveTo(this.worldWidth, y);
+            this.ctx.lineTo(this.worldWidth, y + stripeSpacing);
             this.ctx.stroke();
         }
         

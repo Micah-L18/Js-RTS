@@ -278,21 +278,23 @@ class Building {
     getRallyPoint() {
         // Find available spawn position near building
         const baseX = this.position.x;
-        const baseY = this.position.y + this.height / 2 + 50;
+        const baseY = this.position.y + this.height / 2 + 60; // Increased initial distance
         
         // Try to find an unoccupied position
         const unitRadius = 15; // Standard unit size
-        const maxAttempts = 20;
-        const spreadDistance = 40;
+        const maxAttempts = 30; // Increased attempts
+        const spreadDistance = 50; // Increased spread distance
         
         for (let attempt = 0; attempt < maxAttempts; attempt++) {
             let offsetX = 0;
             let offsetY = 0;
             
             if (attempt > 0) {
-                // Spiral pattern for positioning
-                const angle = (attempt * 60) * (Math.PI / 180); // 60 degrees apart
-                const distance = Math.floor(attempt / 6) * spreadDistance + spreadDistance;
+                // Improved formation pattern - create concentric circles
+                const ring = Math.floor((attempt - 1) / 8) + 1; // Which ring (circle) we're on
+                const posInRing = (attempt - 1) % 8; // Position within the ring
+                const angle = (posInRing * 45) * (Math.PI / 180); // 45 degrees apart (8 positions per ring)
+                const distance = ring * spreadDistance;
                 offsetX = Math.cos(angle) * distance;
                 offsetY = Math.sin(angle) * distance;
             }
@@ -302,8 +304,8 @@ class Building {
                 baseY + offsetY
             );
             
-            // Check if position is clear
-            if (this.isPositionClear(testPos, unitRadius)) {
+            // Check if position is clear and within bounds
+            if (this.isPositionClear(testPos, unitRadius) && this.isWithinBounds(testPos)) {
                 return testPos;
             }
         }
@@ -312,18 +314,42 @@ class Building {
         return new Vector2(baseX, baseY);
     }
     
+    isWithinBounds(position) {
+        // Make sure spawn position is within world bounds
+        if (!window.game || !window.game.engine) return true;
+        
+        const margin = 50; // Keep units away from world edges
+        return position.x >= margin && 
+               position.x <= window.game.engine.worldWidth - margin &&
+               position.y >= margin && 
+               position.y <= window.game.engine.worldHeight - margin;
+    }
+    
     isPositionClear(position, radius) {
         if (!window.game || !window.game.engine) return true;
         
-        // Check against all existing units
+        // Check against all existing units (both friendly and enemy for better spacing)
         for (const entity of window.game.engine.entities) {
-            if (entity.type === 'unit' && entity.team === this.team) {
+            if (entity.type === 'unit') {
                 const distance = Math.sqrt(
                     Math.pow(entity.position.x - position.x, 2) + 
                     Math.pow(entity.position.y - position.y, 2)
                 );
-                if (distance < radius * 2) {
+                // Use larger radius for better spacing (3x instead of 2x)
+                if (distance < radius * 3) {
                     return false; // Too close to existing unit
+                }
+            }
+            // Also check against buildings to avoid spawning inside them
+            if (entity.type === 'building') {
+                const distance = Math.sqrt(
+                    Math.pow(entity.position.x - position.x, 2) + 
+                    Math.pow(entity.position.y - position.y, 2)
+                );
+                // Check if unit would spawn inside or too close to building
+                const buildingRadius = Math.max(entity.width, entity.height) / 2;
+                if (distance < radius + buildingRadius + 10) {
+                    return false; // Too close to building
                 }
             }
         }
@@ -547,6 +573,8 @@ const BuildingFactory = {
                 return new Barracks(x, y, team);
             case 'reactor':
                 return new Reactor(x, y, team);
+            case 'turret':
+                return new Turret(x, y, team);
             default:
                 return new Building(x, y, team);
         }
@@ -571,3 +599,229 @@ const BuildingFactory = {
         };
     }
 };
+
+// Turret Defense Building
+class Turret extends Building {
+    constructor(x, y, team = 'player') {
+        super(x, y, team);
+        
+        this.width = 60;
+        this.height = 60;
+        this.maxHealth = 800; // Doubled from 400 - much more durable
+        this.health = this.maxHealth;
+        this.constructionTime = 15000; // 15 seconds to build
+        
+        this.supplyCost = 250;
+        this.powerCost = 1; // Requires 1 power
+        
+        this.color = team === 'player' ? '#666666' : '#993333';
+        
+        // Combat properties - Much stronger than marines
+        this.damage = 75; // More than doubled from 35 - can kill marine in 2 hits
+        this.attackRange = 180; // Increased from 150 - much longer range than marines
+        this.attackCooldown = 300; // Even faster from 500ms - very high rate of fire
+        this.lastAttackTime = 0;
+        this.attackTarget = null;
+        
+        // Turret specific properties
+        this.rotation = 0; // Turret can rotate to face targets
+        this.detectionRange = 200; // Slightly longer than attack range
+        
+        this.canProduce = []; // Turrets don't produce anything
+    }
+    
+    update(deltaTime) {
+        super.update(deltaTime);
+        
+        if (this.isDead || this.isUnderConstruction) return;
+        
+        // Auto-target enemies
+        this.updateTargeting(deltaTime);
+        
+        // Attack current target
+        this.updateAttack(deltaTime);
+    }
+    
+    updateTargeting(deltaTime) {
+        if (!window.game || !window.game.engine) return;
+        
+        // All turrets should auto-target enemies, but only send multiplayer events for our turrets
+        const isMultiplayer = window.game && window.game.isMultiplayer === true;
+        const isMyTurret = !isMultiplayer || this.team === window.game.playerTeam;
+        
+        // If we don't have a target or target is dead/out of range, find a new one
+        if (!this.attackTarget || this.attackTarget.isDead || 
+            this.position.distance(this.attackTarget.position) > this.detectionRange) {
+            
+            const nearbyEnemies = window.game.engine.getEntitiesNear(this.position, this.detectionRange)
+                .filter(entity => 
+                    (entity instanceof Unit || entity instanceof Building) && 
+                    entity.team !== this.team && 
+                    !entity.isDead
+                );
+            
+            if (nearbyEnemies.length > 0) {
+                // Prioritize units over buildings, then by closest distance
+                const enemyUnits = nearbyEnemies.filter(e => e instanceof Unit);
+                const targets = enemyUnits.length > 0 ? enemyUnits : nearbyEnemies;
+                
+                // Find closest target
+                this.attackTarget = targets.reduce((closest, target) => {
+                    const closestDist = this.position.distance(closest.position);
+                    const targetDist = this.position.distance(target.position);
+                    return targetDist < closestDist ? target : closest;
+                });
+                
+                // Only send multiplayer action for our turrets to avoid conflicts
+                if (isMyTurret && isMultiplayer) {
+                    window.game.sendMultiplayerAction('turretTarget', {
+                        turretId: this.id,
+                        targetId: this.attackTarget.id,
+                        team: this.team
+                    });
+                }
+            } else {
+                this.attackTarget = null;
+            }
+        }
+        
+        // Rotate turret to face target
+        if (this.attackTarget) {
+            const direction = this.attackTarget.position.subtract(this.position);
+            this.rotation = Math.atan2(direction.y, direction.x);
+        }
+    }
+    
+    updateAttack(deltaTime) {
+        if (!this.attackTarget || this.attackTarget.isDead) {
+            this.attackTarget = null;
+            return;
+        }
+        
+        const distance = this.position.distance(this.attackTarget.position);
+        
+        if (distance > this.attackRange) {
+            this.attackTarget = null; // Target moved out of range
+            return;
+        }
+        
+        // Attack if cooldown is ready
+        const currentTime = Date.now();
+        if (currentTime - this.lastAttackTime >= this.attackCooldown) {
+            this.performAttack(this.attackTarget);
+            this.lastAttackTime = currentTime;
+        }
+    }
+    
+    performAttack(target) {
+        if (!target || target.isDead) return;
+        
+        // In multiplayer, only the owner of this turret should calculate damage
+        // In single player, all turrets can deal damage
+        const isMultiplayer = window.game && window.game.isMultiplayer === true;
+        const isMyTurret = !isMultiplayer || this.team === window.game.playerTeam;
+        
+        // Create visual effects
+        this.createAttackEffects(target);
+        
+        // Only apply damage if this is our turret (authoritative)
+        if (isMyTurret) {
+            target.takeDamage(this.damage);
+            console.log(`${this.constructor.name} attacked ${target.constructor.name} for ${this.damage} damage`);
+            
+            // Send attack performed event to other players
+            if (isMultiplayer) {
+                window.game.sendMultiplayerAction('turretAttack', {
+                    turretId: this.id,
+                    targetId: target.id,
+                    team: this.team,
+                    timestamp: Date.now()
+                });
+            }
+        }
+    }
+    
+    createAttackEffects(target) {
+        // Create bullet effect from turret to target
+        if (window.game && window.game.engine) {
+            const bullet = new Bullet(this.position.clone(), target.position.clone());
+            window.game.engine.addBullet(bullet);
+        }
+        
+        // Create muzzle flash effect
+        if (window.game && window.game.engine) {
+            const direction = target.position.subtract(this.position);
+            const muzzleFlash = new MuzzleFlashEffect(this.position.clone(), direction);
+            window.game.engine.addEffect(muzzleFlash);
+        }
+    }
+    
+    render(ctx, camera) {
+        if (this.isDead) return;
+        
+        ctx.save();
+        ctx.translate(this.position.x, this.position.y);
+        
+        // Base platform
+        ctx.fillStyle = this.color;
+        ctx.fillRect(-this.width/2, -this.height/2, this.width, this.height);
+        
+        // Turret gun (rotated)
+        ctx.save();
+        ctx.rotate(this.rotation);
+        
+        // Gun barrel
+        ctx.fillStyle = this.team === 'player' ? '#444444' : '#771111';
+        ctx.fillRect(0, -4, 30, 8);
+        
+        // Gun base
+        ctx.beginPath();
+        ctx.arc(0, 0, 12, 0, Math.PI * 2);
+        ctx.fill();
+        
+        ctx.restore();
+        
+        // Construction overlay
+        if (this.isUnderConstruction) {
+            ctx.fillStyle = 'rgba(255, 255, 0, 0.3)';
+            ctx.fillRect(-this.width/2, -this.height/2, this.width, this.height);
+            
+            const progress = Math.min(1, this.constructionProgress);
+            ctx.fillStyle = 'rgba(0, 255, 0, 0.5)';
+            ctx.fillRect(-this.width/2, this.height/2 - 4, this.width * progress, 4);
+        }
+        
+        // Selection indicator
+        if (this.selected) {
+            ctx.strokeStyle = '#00ff00';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(-this.width/2 - 2, -this.height/2 - 2, this.width + 4, this.height + 4);
+        }
+        
+        // Health bar
+        if (this.health < this.maxHealth) {
+            const barWidth = this.width;
+            const barHeight = 6;
+            const healthPercent = this.health / this.maxHealth;
+            
+            ctx.fillStyle = 'rgba(255, 0, 0, 0.7)';
+            ctx.fillRect(-barWidth/2, -this.height/2 - 12, barWidth, barHeight);
+            
+            ctx.fillStyle = 'rgba(0, 255, 0, 0.7)';
+            ctx.fillRect(-barWidth/2, -this.height/2 - 12, barWidth * healthPercent, barHeight);
+        }
+        
+        // Attack range when selected
+        if (this.selected) {
+            ctx.strokeStyle = 'rgba(255, 0, 0, 0.3)';
+            ctx.lineWidth = 1;
+            ctx.setLineDash([5, 5]);
+            ctx.beginPath();
+            ctx.arc(0, 0, this.attackRange, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.setLineDash([]);
+        }
+        
+        ctx.restore();
+    }
+}

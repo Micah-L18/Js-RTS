@@ -339,7 +339,13 @@ class Unit {
     }
     
     moveTo(destination) {
-        this.destination = destination.clone();
+        // Clamp destination to world bounds
+        const clampedDestination = new Vector2(
+            MathUtils.clamp(destination.x, this.radius, window.game.engine.worldWidth - this.radius),
+            MathUtils.clamp(destination.y, this.radius, window.game.engine.worldHeight - this.radius)
+        );
+        
+        this.destination = clampedDestination;
         this.state = 'moving';
         this.attackTarget = null;
     }
@@ -465,7 +471,7 @@ class Marine extends Unit {
         this.health = this.maxHealth;
         this.damage = 25;
         this.attackRange = 100;
-        this.maxSpeed = 70;
+        this.maxSpeed = 80; // Medium speed - between Warthog and Scorpion
         this.attackCooldown = 800;
         this.radius = 12;
         this.size = 18;
@@ -487,7 +493,7 @@ class Warthog extends Unit {
         this.health = this.maxHealth;
         this.damage = 15;
         this.attackRange = 120;
-        this.maxSpeed = 140;
+        this.maxSpeed = 120; // Fastest unit
         this.attackCooldown = 600;
         this.radius = 20;
         this.size = 35;
@@ -552,7 +558,7 @@ class Scorpion extends Unit {
         this.health = this.maxHealth;
         this.damage = 60;
         this.attackRange = 150;
-        this.maxSpeed = 35;
+        this.maxSpeed = 40; // Slowest unit
         this.attackCooldown = 2000;
         this.radius = 25;
         this.size = 45;

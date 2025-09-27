@@ -161,6 +161,77 @@ body {
     box-shadow: 0 0 15px rgba(0, 212, 255, 0.6);
 }
 
+/* Building Queue Panel */
+.building-queue-panel {
+    top: 200px;
+    right: 20px;
+    padding: 12px;
+    width: 220px;
+    min-height: 80px;
+}
+
+.building-queue-item {
+    display: flex;
+    align-items: center;
+    padding: 8px;
+    margin: 4px 0;
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(0, 212, 255, 0.4);
+    border-radius: 6px;
+}
+
+.building-queue-item.current {
+    background: rgba(0, 255, 100, 0.2);
+    border-color: rgba(0, 255, 100, 0.6);
+}
+
+.queue-item-icon {
+    font-size: 16px;
+    margin-right: 8px;
+    min-width: 20px;
+}
+
+.queue-item-info {
+    flex: 1;
+}
+
+.queue-item-name {
+    font-size: 12px;
+    font-weight: bold;
+    margin-bottom: 4px;
+}
+
+.queue-item-progress {
+    width: 100%;
+}
+
+.progress-bar {
+    width: 100%;
+    height: 8px;
+    background: rgba(0, 0, 0, 0.4);
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #00ff64, #00d4ff);
+    border-radius: 4px;
+    transition: width 0.3s ease;
+}
+
+.empty-queue {
+    text-align: center;
+    color: rgba(255, 255, 255, 0.5);
+    font-size: 11px;
+    padding: 20px;
+}
+
+.queued-building {
+    background: rgba(255, 255, 255, 0.05);
+    border-color: rgba(0, 212, 255, 0.2);
+}
+
 /* Selection Card (bottom center) */
 .selection-card {
     bottom: 20px;
@@ -755,4 +826,60 @@ body {
 
 .player-slot.waiting .player-status {
     color: rgba(255, 255, 255, 0.5);
+}
+
+/* Room code copy functionality */
+.room-code-clickable {
+    cursor: pointer;
+    padding: 4px 8px;
+    border-radius: 4px;
+    transition: all 0.2s ease;
+    background: rgba(0, 212, 255, 0.1);
+    border: 1px solid transparent;
+}
+
+.room-code-clickable:hover {
+    background: rgba(0, 212, 255, 0.2);
+    border-color: rgba(0, 212, 255, 0.5);
+}
+
+.copy-btn {
+    background: rgba(0, 212, 255, 0.2);
+    border: 1px solid rgba(0, 212, 255, 0.5);
+    color: #00d4ff;
+    padding: 4px 8px;
+    margin-left: 8px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 12px;
+    transition: all 0.2s ease;
+}
+
+.copy-btn:hover {
+    background: rgba(0, 212, 255, 0.3);
+    border-color: rgba(0, 212, 255, 0.8);
+    transform: scale(1.05);
+}
+
+.copy-btn:active {
+    transform: scale(0.95);
+}
+
+/* Copy success feedback */
+.copy-feedback {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    background: rgba(0, 255, 0, 0.9);
+    color: white;
+    padding: 10px 20px;
+    border-radius: 4px;
+    font-size: 14px;
+    z-index: 1000;
+    animation: slideInOut 2s ease-in-out;
+}
+
+@keyframes slideInOut {
+    0%, 100% { opacity: 0; transform: translateX(100%); }
+    15%, 85% { opacity: 1; transform: translateX(0); }
 }

@@ -20,6 +20,11 @@ class Game {
         this.multiplayerManager = null;
         this.positionSyncTimer = null;
         
+        // Building queue system
+        this.buildingQueue = [];
+        this.currentlyBuilding = null;
+        this.buildingQueueTimer = null;
+        
         // Don't auto-initialize in multiplayer mode
         if (!window.multiplayerManager) {
             this.init();
@@ -102,14 +107,34 @@ class Game {
             });
         });
         
-        // Minimap click
+        // Minimap interaction (click and drag)
         const minimapCanvas = document.getElementById('minimapCanvas');
         if (minimapCanvas) {
-            minimapCanvas.addEventListener('click', (e) => {
-                console.log('Minimap clicked');
-                this.handleMinimapClick(e);
+            // Initialize minimap interaction state
+            this.minimapInteraction = {
+                isMouseDown: false,
+                isDragging: false,
+                dragThreshold: 5,
+                startPos: { x: 0, y: 0 }
+            };
+            
+            minimapCanvas.addEventListener('mousedown', (e) => {
+                this.handleMinimapMouseDown(e);
             });
-            console.log('Minimap click handler added');
+            
+            minimapCanvas.addEventListener('mousemove', (e) => {
+                this.handleMinimapMouseMove(e);
+            });
+            
+            minimapCanvas.addEventListener('mouseup', (e) => {
+                this.handleMinimapMouseUp(e);
+            });
+            
+            minimapCanvas.addEventListener('mouseleave', (e) => {
+                this.handleMinimapMouseUp(e); // Treat mouse leave as mouse up
+            });
+            
+            console.log('Minimap interaction handlers added');
         } else {
             console.warn('Minimap canvas not found');
         }
@@ -372,6 +397,15 @@ class Game {
             case 'buildingPlace':
                 this.handleRemoteBuildingPlace(data);
                 break;
+            case 'buildingQueue':
+                this.handleRemoteBuildingQueue(data);
+                break;
+            case 'buildingStart':
+                this.handleRemoteBuildingStart(data);
+                break;
+            case 'buildingComplete':
+                this.handleRemoteBuildingComplete(data);
+                break;
             case 'unitProduce':
                 this.handleRemoteUnitProduce(data);
                 break;
@@ -383,6 +417,12 @@ class Game {
                 break;
             case 'unitDamage':
                 this.handleRemoteUnitDamage(data);
+                break;
+            case 'turretTarget':
+                this.handleRemoteTurretTarget(data);
+                break;
+            case 'turretAttack':
+                this.handleRemoteTurretAttack(data);
                 break;
             case 'attackPerformed':
                 this.handleRemoteAttackPerformed(data);
@@ -444,6 +484,49 @@ class Game {
         }
     }
     
+    handleRemoteBuildingQueue(data) {
+        // Only handle enemy building queues
+        if (data.team !== this.playerTeam) {
+            // Add building to remote player's queue (simulate their queue system)
+            const buildingData = {
+                type: data.type,
+                position: data.position,
+                team: data.team
+            };
+            
+            // Create the building immediately for remote players (they already paid the cost)
+            const building = BuildingFactory.create(buildingData.type, buildingData.position.x, buildingData.position.y, buildingData.team);
+            this.engine.addEntity(building);
+            
+            console.log(`Remote building queued and started: ${data.type} by ${data.team} at (${data.position.x}, ${data.position.y})`);
+        }
+    }
+    
+    handleRemoteBuildingStart(data) {
+        // Handle remote building construction start
+        if (data.team !== this.playerTeam) {
+            const building = this.engine.entities.find(e => e.id === data.buildingId);
+            if (building) {
+                building.isUnderConstruction = true;
+                building.constructionProgress = 0;
+                building.constructionStartTime = Date.now();
+                console.log(`Remote building construction started: ${data.buildingId} by ${data.team}`);
+            }
+        }
+    }
+    
+    handleRemoteBuildingComplete(data) {
+        // Handle remote building construction completion
+        if (data.team !== this.playerTeam) {
+            const building = this.engine.entities.find(e => e.id === data.buildingId);
+            if (building) {
+                building.isUnderConstruction = false;
+                building.constructionProgress = 1;
+                console.log(`Remote building construction completed: ${data.buildingId} by ${data.team}`);
+            }
+        }
+    }
+    
     handleRemoteUnitProduce(data) {
         // Find the building and add unit to production queue
         const building = this.engine.entities.find(e => e.id === data.buildingId);
@@ -456,11 +539,33 @@ class Game {
     handleRemoteUnitSpawn(data) {
         // Only spawn enemy units remotely
         if (data.team !== this.playerTeam) {
-            const unit = UnitFactory.create(data.unitType, data.position.x, data.position.y, data.team);
+            // Find the building that spawned this unit to use its collision system
+            const building = this.engine.entities.find(e => e.id === data.buildingId && e.type === 'building');
+            let spawnPos = { x: data.position.x, y: data.position.y };
+            
+            // If we have the building, try to find a better spawn position
+            if (building && building.isPositionClear) {
+                const unitRadius = 15; // Standard unit size
+                const maxAttempts = 10;
+                
+                for (let attempt = 0; attempt < maxAttempts; attempt++) {
+                    const testPos = {
+                        x: data.position.x + (Math.random() - 0.5) * 60 * attempt,
+                        y: data.position.y + (Math.random() - 0.5) * 60 * attempt
+                    };
+                    
+                    if (building.isPositionClear(new Vector2(testPos.x, testPos.y), unitRadius)) {
+                        spawnPos = testPos;
+                        break;
+                    }
+                }
+            }
+            
+            const unit = UnitFactory.create(data.unitType, spawnPos.x, spawnPos.y, data.team);
             // Set the same ID to keep sync
             unit.id = data.unitId;
             this.engine.entities.push(unit); // Add directly to avoid generating new ID
-            console.log(`Remote unit spawned: ${data.unitType} by ${data.team} at (${data.position.x}, ${data.position.y})`);
+            console.log(`Remote unit spawned: ${data.unitType} by ${data.team} at (${spawnPos.x}, ${spawnPos.y})`);
         }
     }
     
@@ -488,6 +593,24 @@ class Game {
         if (attacker && target && attacker.team !== this.playerTeam) {
             // Show visual attack effects only (no damage calculation)
             attacker.performVisualAttack(target);
+        }
+    }
+    
+    handleRemoteTurretTarget(data) {
+        const turret = this.engine.entities.find(e => e.id === data.turretId);
+        const target = this.engine.entities.find(e => e.id === data.targetId);
+        if (turret && target && turret.team !== this.playerTeam) {
+            // Set target for enemy turret so we see it tracking
+            turret.attackTarget = target;
+        }
+    }
+    
+    handleRemoteTurretAttack(data) {
+        const turret = this.engine.entities.find(e => e.id === data.turretId);
+        const target = this.engine.entities.find(e => e.id === data.targetId);
+        if (turret && target && turret.team !== this.playerTeam) {
+            // Show visual attack effects only (no damage calculation)
+            turret.createAttackEffects(target);
         }
     }
     
@@ -535,6 +658,9 @@ class Game {
         this.effects.forEach(effect => effect.update(deltaTime));
         this.effects = this.effects.filter(effect => !effect.isDead);
         
+        // Update building queue UI
+        this.updateBuildingQueueUI();
+        
         // Check win condition in multiplayer
         if (this.isMultiplayer) {
             this.checkWinCondition();
@@ -577,11 +703,17 @@ class Game {
             this.positionSyncTimer = null;
         }
         
+        // Cleanup building queue
+        this.cleanupBuildingQueue();
+        
         if (this.isMultiplayer && this.multiplayerManager) {
             this.multiplayerManager.notifyGameOver(winner);
         } else {
-            // Single player end game logic
-            const message = winner === this.playerTeam ? 'Victory!' : 'Defeat!';
+            // Single player end game logic with player name
+            const playerName = this.playerName || 'Player';
+            const message = winner === this.playerTeam ? 
+                `🎉 Victory! ${playerName} won the game!` : 
+                `💀 Defeat! ${playerName} lost the battle.`;
             alert(message);
         }
     }
@@ -599,6 +731,9 @@ class Game {
         if (this.buildMode && this.buildingToPlace) {
             this.renderBuildingPreview(ctx);
         }
+        
+        // Render queued building outlines
+        this.renderQueuedBuildingOutlines(ctx);
     }
     
     handleUnitProduction(unitType) {
@@ -723,12 +858,7 @@ class Game {
             this.exitBuildingPlacement();
         }
         
-        // Check if there's already a building under construction
-        if (this.hasActiveBuildingConstruction()) {
-            this.showMessage('Cannot build: Another building is already under construction');
-            console.log('Cannot build: Another building is already under construction');
-            return;
-        }
+        // Building queue system allows multiple buildings, so no need to check for active construction
         
         const cost = BuildingFactory.getBuildingCost(buildingType);
         
@@ -758,21 +888,25 @@ class Game {
         
         // Check if position is valid (not overlapping other buildings)
         if (this.isValidBuildingPosition(worldPos, buildingType)) {
-            // Spend resources and place building
+            // Spend resources and add to queue
             this.resources.spendResources(cost.supplies, cost.power);
             
-            const building = BuildingFactory.create(buildingType, worldPos.x, worldPos.y, this.playerTeam);
-            this.engine.addEntity(building);
+            // Add building to queue
+            this.addBuildingToQueue({
+                type: buildingType,
+                position: { x: worldPos.x, y: worldPos.y },
+                cost: cost,
+                team: this.playerTeam
+            });
             
-            console.log(`${buildingType} placed at (${Math.round(worldPos.x)}, ${Math.round(worldPos.y)})`);
+            console.log(`${buildingType} queued for construction at (${Math.round(worldPos.x)}, ${Math.round(worldPos.y)})`);
             
             // Send multiplayer action
             if (this.isMultiplayer) {
-                this.sendMultiplayerAction('buildingPlace', {
+                this.sendMultiplayerAction('buildingQueue', {
                     type: buildingType,
                     position: { x: worldPos.x, y: worldPos.y },
-                    team: this.playerTeam,
-                    buildingId: building.id
+                    team: this.playerTeam
                 });
             }
         } else {
@@ -836,6 +970,161 @@ class Game {
         }
     }
     
+    // Building Queue Management
+    addBuildingToQueue(buildingData) {
+        this.buildingQueue.push(buildingData);
+        this.updateBuildingQueueUI();
+        this.processBuildingQueue();
+    }
+    
+    processBuildingQueue() {
+        // If not currently building and there's a queue, start next building
+        if (!this.currentlyBuilding && this.buildingQueue.length > 0) {
+            const nextBuilding = this.buildingQueue.shift();
+            this.startBuildingConstruction(nextBuilding);
+            this.updateBuildingQueueUI();
+        }
+    }
+    
+    startBuildingConstruction(buildingData) {
+        // Create the building entity
+        const building = BuildingFactory.create(buildingData.type, buildingData.position.x, buildingData.position.y, buildingData.team);
+        this.engine.addEntity(building);
+        
+        this.currentlyBuilding = {
+            building: building,
+            data: buildingData,
+            startTime: Date.now()
+        };
+        
+        console.log(`Started construction of ${buildingData.type} at (${Math.round(buildingData.position.x)}, ${Math.round(buildingData.position.y)})`);
+        
+        // Send multiplayer start event
+        if (this.isMultiplayer) {
+            this.sendMultiplayerAction('buildingStart', {
+                buildingId: building.id,
+                team: this.playerTeam,
+                type: buildingData.type,
+                position: buildingData.position
+            });
+        }
+        
+        // Set up completion timer
+        this.buildingQueueTimer = setTimeout(() => {
+            this.completeBuildingConstruction();
+        }, building.constructionTime);
+        
+        this.updateBuildingQueueUI();
+    }
+    
+    completeBuildingConstruction() {
+        if (this.currentlyBuilding) {
+            const building = this.currentlyBuilding.building;
+            building.isUnderConstruction = false;
+            building.constructionProgress = 1;
+            
+            console.log(`Completed construction of ${building.constructor.name}`);
+            
+            // Send multiplayer completion event
+            if (this.isMultiplayer) {
+                this.sendMultiplayerAction('buildingComplete', {
+                    buildingId: building.id,
+                    team: this.playerTeam
+                });
+            }
+            
+            this.currentlyBuilding = null;
+            this.buildingQueueTimer = null;
+            
+            // Update UI and process next building in queue
+            this.updateBuildingQueueUI();
+            this.processBuildingQueue();
+        }
+    }
+    
+    // Update building queue UI
+    updateBuildingQueueUI() {
+        const queuePanel = document.getElementById('buildingQueuePanel');
+        const currentBuildingInfo = document.getElementById('currentBuildingInfo');
+        const currentBuildingName = document.getElementById('currentBuildingName');
+        const currentBuildingProgress = document.getElementById('currentBuildingProgress');
+        const queuedBuildingsList = document.getElementById('queuedBuildingsList');
+        const emptyQueueMessage = document.getElementById('emptyQueueMessage');
+        
+        if (!queuePanel) return; // Panel not found
+        
+        // Show/hide the queue panel based on whether there's activity
+        const hasActivity = this.currentlyBuilding || this.buildingQueue.length > 0;
+        queuePanel.style.display = hasActivity ? 'block' : 'none';
+        
+        // Update currently building section
+        if (this.currentlyBuilding) {
+            currentBuildingInfo.style.display = 'block';
+            currentBuildingName.textContent = this.getBuildingDisplayName(this.currentlyBuilding.data.type);
+            
+            // Update progress bar
+            const building = this.currentlyBuilding.building;
+            if (building && building.constructionProgress !== undefined) {
+                const progress = Math.round(building.constructionProgress * 100);
+                currentBuildingProgress.style.width = `${progress}%`;
+            }
+        } else {
+            currentBuildingInfo.style.display = 'none';
+        }
+        
+        // Update queued buildings list
+        queuedBuildingsList.innerHTML = '';
+        if (this.buildingQueue.length > 0) {
+            emptyQueueMessage.style.display = 'none';
+            this.buildingQueue.forEach((buildingData, index) => {
+                const queueItem = document.createElement('div');
+                queueItem.className = 'building-queue-item queued-building';
+                queueItem.innerHTML = `
+                    <div class="queue-item-icon">${this.getBuildingIcon(buildingData.type)}</div>
+                    <div class="queue-item-info">
+                        <div class="queue-item-name">${this.getBuildingDisplayName(buildingData.type)}</div>
+                        <div class="queue-position">Position ${index + 1}</div>
+                    </div>
+                `;
+                queuedBuildingsList.appendChild(queueItem);
+            });
+        } else if (!this.currentlyBuilding) {
+            emptyQueueMessage.style.display = 'block';
+        } else {
+            emptyQueueMessage.style.display = 'none';
+        }
+    }
+    
+    getBuildingDisplayName(buildingType) {
+        const names = {
+            'supply': 'Supply Depot',
+            'barracks': 'Barracks',
+            'reactor': 'Reactor',
+            'turret': 'Turret'
+        };
+        return names[buildingType] || buildingType.charAt(0).toUpperCase() + buildingType.slice(1);
+    }
+    
+    getBuildingIcon(buildingType) {
+        const icons = {
+            'supply': '📦',
+            'barracks': '🏭',
+            'reactor': '⚡',
+            'turret': '🔫'
+        };
+        return icons[buildingType] || '🏗️';
+    }
+    
+    // Clean up queue timer
+    cleanupBuildingQueue() {
+        if (this.buildingQueueTimer) {
+            clearTimeout(this.buildingQueueTimer);
+            this.buildingQueueTimer = null;
+        }
+        this.currentlyBuilding = null;
+        this.buildingQueue = [];
+    }
+    
     renderBuildingPreview(ctx) {
         if (!this.buildingToPlace) return;
         
@@ -844,28 +1133,159 @@ class Game {
         
         const tempBuilding = BuildingFactory.create(this.buildingToPlace, worldPos.x, worldPos.y);
         
+        // Convert world position to screen position for accurate rendering
+        const screenPos = this.engine.worldToScreen(worldPos.x, worldPos.y);
+        
         ctx.save();
         ctx.globalAlpha = 0.5;
         ctx.fillStyle = isValid ? '#00ff00' : '#ff0000';
         ctx.fillRect(
-            worldPos.x - tempBuilding.width / 2,
-            worldPos.y - tempBuilding.height / 2,
-            tempBuilding.width,
-            tempBuilding.height
+            screenPos.x - (tempBuilding.width * this.engine.camera.zoom) / 2,
+            screenPos.y - (tempBuilding.height * this.engine.camera.zoom) / 2,
+            tempBuilding.width * this.engine.camera.zoom,
+            tempBuilding.height * this.engine.camera.zoom
         );
         ctx.restore();
     }
     
-    handleMinimapClick(e) {
+    renderQueuedBuildingOutlines(ctx) {
+        // Apply camera transformation for world coordinates
+        ctx.save();
+        ctx.translate(-this.engine.camera.x, -this.engine.camera.y);
+        ctx.scale(this.engine.camera.zoom, this.engine.camera.zoom);
+        
+        // Render outlines for buildings in queue
+        this.buildingQueue.forEach((buildingData, index) => {
+            const tempBuilding = BuildingFactory.create(buildingData.type, buildingData.position.x, buildingData.position.y);
+            
+            ctx.save();
+            ctx.globalAlpha = 0.3 - (index * 0.05); // Fade later queue items
+            ctx.strokeStyle = '#00d4ff'; // Light blue outline
+            ctx.lineWidth = 2 / this.engine.camera.zoom; // Adjust line width for zoom
+            ctx.setLineDash([5 / this.engine.camera.zoom, 5 / this.engine.camera.zoom]); // Adjust dash pattern for zoom
+            
+            // Draw outline rectangle
+            ctx.strokeRect(
+                buildingData.position.x - tempBuilding.width / 2,
+                buildingData.position.y - tempBuilding.height / 2,
+                tempBuilding.width,
+                tempBuilding.height
+            );
+            
+            // Draw queue number
+            ctx.globalAlpha = 0.8;
+            ctx.fillStyle = '#00d4ff';
+            ctx.font = `${16 / this.engine.camera.zoom}px Arial`; // Adjust font size for zoom
+            ctx.textAlign = 'center';
+            ctx.fillText(
+                `${index + 1}`,
+                buildingData.position.x,
+                buildingData.position.y + 5 / this.engine.camera.zoom
+            );
+            
+            ctx.restore();
+        });
+        
+        // Render outline for currently building structure (if any)
+        if (this.currentlyBuilding) {
+            const building = this.currentlyBuilding.building;
+            
+            ctx.save();
+            ctx.globalAlpha = 0.6;
+            ctx.strokeStyle = '#00ff64'; // Green outline for current building
+            ctx.lineWidth = 3 / this.engine.camera.zoom; // Adjust line width for zoom
+            ctx.setLineDash([3 / this.engine.camera.zoom, 3 / this.engine.camera.zoom]); // Adjust dash pattern for zoom
+            
+            ctx.strokeRect(
+                building.position.x - building.width / 2,
+                building.position.y - building.height / 2,
+                building.width,
+                building.height
+            );
+            
+            // Draw "BUILDING" text
+            ctx.globalAlpha = 0.9;
+            ctx.fillStyle = '#00ff64';
+            ctx.font = `bold ${12 / this.engine.camera.zoom}px Arial`; // Adjust font size for zoom
+            ctx.textAlign = 'center';
+            ctx.fillText(
+                'BUILDING',
+                building.position.x,
+                building.position.y - building.height / 2 - 8 / this.engine.camera.zoom
+            );
+            
+            ctx.restore();
+        }
+        
+        // Restore camera transformation
+        ctx.restore();
+    }
+    
+    handleMinimapMouseDown(e) {
         const rect = e.target.getBoundingClientRect();
-        const x = e.clientX - rect.left;
-        const y = e.clientY - rect.top;
+        this.minimapInteraction.isMouseDown = true;
+        this.minimapInteraction.startPos = {
+            x: e.clientX - rect.left,
+            y: e.clientY - rect.top
+        };
+        this.minimapInteraction.isDragging = false;
+    }
+    
+    handleMinimapMouseMove(e) {
+        if (!this.minimapInteraction.isMouseDown) return;
         
-        // Convert minimap coordinates to world coordinates
-        const worldX = (x / rect.width) * this.engine.worldWidth;
-        const worldY = (y / rect.height) * this.engine.worldHeight;
+        const rect = e.target.getBoundingClientRect();
+        const canvas = e.target;
+        const currentPos = {
+            x: e.clientX - rect.left,
+            y: e.clientY - rect.top
+        };
         
-        this.engine.setCameraPosition(worldX, worldY);
+        const distance = Math.sqrt(
+            Math.pow(currentPos.x - this.minimapInteraction.startPos.x, 2) +
+            Math.pow(currentPos.y - this.minimapInteraction.startPos.y, 2)
+        );
+        
+        if (distance > this.minimapInteraction.dragThreshold) {
+            this.minimapInteraction.isDragging = true;
+        }
+        
+        if (this.minimapInteraction.isDragging) {
+            // Convert minimap coordinates to world coordinates and move camera
+            // Use canvas dimensions instead of rect dimensions for accuracy
+            const worldX = (currentPos.x / canvas.width) * this.engine.worldWidth;
+            const worldY = (currentPos.y / canvas.height) * this.engine.worldHeight;
+            this.engine.setCameraPosition(worldX, worldY);
+        }
+    }
+    
+    handleMinimapMouseUp(e) {
+        if (!this.minimapInteraction.isMouseDown) return;
+        
+        const rect = e.target.getBoundingClientRect();
+        const canvas = e.target;
+        const endPos = {
+            x: e.clientX - rect.left,
+            y: e.clientY - rect.top
+        };
+        
+        // If it was just a click (not a drag), center camera on click position
+        if (!this.minimapInteraction.isDragging) {
+            // Use canvas dimensions instead of rect dimensions for accuracy
+            const worldX = (endPos.x / canvas.width) * this.engine.worldWidth;
+            const worldY = (endPos.y / canvas.height) * this.engine.worldHeight;
+            this.engine.setCameraPosition(worldX, worldY);
+        }
+        
+        // Reset interaction state
+        this.minimapInteraction.isMouseDown = false;
+        this.minimapInteraction.isDragging = false;
+    }
+    
+    handleMinimapMouseLeave(e) {
+        // Reset interaction state when mouse leaves minimap
+        this.minimapInteraction.isMouseDown = false;
+        this.minimapInteraction.isDragging = false;
     }
     
     addEffect(effect) {
@@ -910,7 +1330,9 @@ class Game {
             Mouse Screen: (${Math.round(mouse.x)}, ${Math.round(mouse.y)})<br>
             Mouse World: (${Math.round(worldMouse.x)}, ${Math.round(worldMouse.y)})<br>
             Canvas: ${this.engine.canvas.width}x${this.engine.canvas.height}<br>
-            Build Mode: ${this.buildMode || 'None'}
+            Build Mode: ${this.buildMode || 'None'}<br>
+            Building Queue: ${this.buildingQueue.length}<br>
+            Currently Building: ${this.currentlyBuilding ? this.currentlyBuilding.data.type : 'None'}
         `;
     }
     

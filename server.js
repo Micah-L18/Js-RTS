@@ -96,6 +96,57 @@ io.on('connection', (socket) => {
         console.log(`Player ${data.nickname} (${socket.id}) joined room ${data.roomCode}`);
     });
     
+    // Handle room rejoining
+    socket.on('rejoinRoom', (data) => {
+        const room = gameRooms.get(data.roomCode);
+        
+        if (!room) {
+            socket.emit('rejoinFailed', 'Room no longer exists');
+            return;
+        }
+        
+        // Find the player in the room by nickname (since they have a new socket ID)
+        const playerIndex = room.players.findIndex(p => p.nickname === data.nickname);
+        
+        if (playerIndex === -1) {
+            socket.emit('rejoinFailed', 'Player not found in room');
+            return;
+        }
+        
+        // Update the player's socket ID
+        const player = room.players[playerIndex];
+        const oldSocketId = player.id;
+        player.id = socket.id;
+        player.reconnected = true;
+        player.lastSeen = Date.now();
+        
+        // Clear any existing timeout for this player
+        if (player.disconnectTimeout) {
+            clearTimeout(player.disconnectTimeout);
+            delete player.disconnectTimeout;
+        }
+        
+        socket.join(data.roomCode);
+        socket.currentRoom = data.roomCode;
+        socket.nickname = data.nickname;
+        
+        socket.emit('rejoinSuccess', {
+            roomCode: data.roomCode,
+            playerTeam: player.team,
+            playerId: socket.id,
+            nickname: data.nickname,
+            gameInProgress: room.gameStarted
+        });
+        
+        // Notify other players of reconnection
+        socket.to(data.roomCode).emit('playerReconnected', {
+            nickname: data.nickname,
+            team: player.team
+        });
+        
+        console.log(`Player ${data.nickname} (${socket.id}) rejoined room ${data.roomCode}, replacing ${oldSocketId}`);
+    });
+    
     // Handle game start
     socket.on('startGame', () => {
         const room = gameRooms.get(socket.currentRoom);
@@ -149,14 +200,51 @@ io.on('connection', (socket) => {
         if (socket.currentRoom) {
             const room = gameRooms.get(socket.currentRoom);
             if (room) {
-                room.players = room.players.filter(p => p.id !== socket.id);
+                const player = room.players.find(p => p.id === socket.id);
                 
-                if (room.players.length === 0) {
-                    gameRooms.delete(socket.currentRoom);
-                    console.log(`Room ${socket.currentRoom} deleted (empty)`);
-                } else {
-                    // Notify remaining player
-                    socket.to(socket.currentRoom).emit('playerDisconnected');
+                if (player) {
+                    if (room.gameStarted) {
+                        // Game is in progress - start 5-minute timeout
+                        player.disconnected = true;
+                        player.disconnectTime = Date.now();
+                        
+                        player.disconnectTimeout = setTimeout(() => {
+                            // 5 minutes passed - declare other player winner
+                            const remainingPlayer = room.players.find(p => p.id !== socket.id && !p.disconnected);
+                            if (remainingPlayer) {
+                                console.log(`Player ${player.nickname} timed out. Declaring ${remainingPlayer.nickname} winner.`);
+                                
+                                io.to(socket.currentRoom).emit('gameOver', {
+                                    winner: remainingPlayer.team,
+                                    winnerNickname: remainingPlayer.nickname,
+                                    reason: 'opponent_timeout'
+                                });
+                            }
+                            
+                            // Clean up room
+                            gameRooms.delete(socket.currentRoom);
+                            console.log(`Room ${socket.currentRoom} deleted (timeout)`);
+                        }, 5 * 60 * 1000); // 5 minutes
+                        
+                        // Notify other player of disconnection
+                        socket.to(socket.currentRoom).emit('playerDisconnected', {
+                            nickname: player.nickname,
+                            timeout: '5 minutes'
+                        });
+                        
+                        console.log(`Player ${player.nickname} disconnected from active game. Starting 5-minute timeout.`);
+                    } else {
+                        // Game not started - remove player immediately
+                        room.players = room.players.filter(p => p.id !== socket.id);
+                        
+                        if (room.players.length === 0) {
+                            gameRooms.delete(socket.currentRoom);
+                            console.log(`Room ${socket.currentRoom} deleted (empty)`);
+                        } else {
+                            // Notify remaining player
+                            socket.to(socket.currentRoom).emit('playerDisconnected');
+                        }
+                    }
                 }
             }
         }

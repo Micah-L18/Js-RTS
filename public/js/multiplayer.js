@@ -9,6 +9,9 @@ class MultiplayerManager {
         this.playerId = null;
         this.gameStarted = false;
         
+        // Check for saved game state on page load
+        this.checkForSavedGame();
+        
         this.setupSocketListeners();
         this.setupUIHandlers();
     }
@@ -20,6 +23,8 @@ class MultiplayerManager {
             this.currentRoom = data.roomCode;
             this.playerTeam = data.playerTeam;
             this.playerId = data.playerId;
+            this.playerNickname = data.nickname;
+            this.saveGameState(); // Save state when joining room
             this.showWaitingRoom(data.roomCode);
         });
         
@@ -29,6 +34,8 @@ class MultiplayerManager {
             this.currentRoom = data.roomCode;
             this.playerTeam = data.playerTeam;
             this.playerId = data.playerId;
+            this.playerNickname = data.nickname;
+            this.saveGameState(); // Save state when joining room
             this.showWaitingRoom(data.roomCode);
         });
         
@@ -52,6 +59,7 @@ class MultiplayerManager {
         this.socket.on('gameStarted', () => {
             console.log('Game started!');
             this.gameStarted = true;
+            this.saveGameState(); // Save game state when game starts
             this.showGameInterface();
             this.initializeGame();
         });
@@ -69,9 +77,37 @@ class MultiplayerManager {
         });
         
         // Player disconnected
-        this.socket.on('playerDisconnected', () => {
+        this.socket.on('playerDisconnected', (data) => {
             console.log('Other player disconnected');
+            if (data && data.timeout) {
+                alert(`Other player disconnected. They have ${data.timeout} to reconnect before you win.`);
+            }
             this.handlePlayerDisconnected();
+        });
+        
+        // Player reconnected
+        this.socket.on('playerReconnected', (data) => {
+            console.log('Other player reconnected:', data);
+            alert(`${data.nickname} has reconnected to the game.`);
+        });
+        
+        // Rejoin success
+        this.socket.on('rejoinSuccess', (data) => {
+            console.log('Successfully rejoined room:', data);
+            this.gameStarted = data.gameInProgress;
+            if (data.gameInProgress) {
+                this.showGameInterface();
+                this.initializeGame();
+            } else {
+                this.showWaitingRoom(data.roomCode);
+            }
+        });
+        
+        // Rejoin failed
+        this.socket.on('rejoinFailed', (message) => {
+            console.log('Failed to rejoin room:', message);
+            this.clearGameState();
+            alert('Could not reconnect to your previous game: ' + message);
         });
     }
     
@@ -166,6 +202,62 @@ class MultiplayerManager {
         document.getElementById('mainMenu').style.display = 'none';
         document.getElementById('waitingRoom').style.display = 'block';
         document.getElementById('startGameBtn').style.display = 'none';
+        
+        // Set up room code copy functionality
+        this.setupRoomCodeCopy(roomCode);
+    }
+    
+    setupRoomCodeCopy(roomCode) {
+        const roomCodeElement = document.getElementById('currentRoomCode');
+        const copyButton = document.getElementById('copyRoomCodeBtn');
+        
+        // Remove existing event listeners
+        const newRoomCodeElement = roomCodeElement.cloneNode(true);
+        const newCopyButton = copyButton.cloneNode(true);
+        roomCodeElement.parentNode.replaceChild(newRoomCodeElement, roomCodeElement);
+        copyButton.parentNode.replaceChild(newCopyButton, copyButton);
+        
+        // Add click handlers
+        const copyRoomCode = () => this.copyRoomCode(roomCode);
+        newRoomCodeElement.addEventListener('click', copyRoomCode);
+        newCopyButton.addEventListener('click', copyRoomCode);
+    }
+    
+    async copyRoomCode(roomCode) {
+        try {
+            await navigator.clipboard.writeText(roomCode);
+            this.showCopyFeedback('Room code copied to clipboard!');
+        } catch (err) {
+            // Fallback for older browsers
+            const textArea = document.createElement('textarea');
+            textArea.value = roomCode;
+            document.body.appendChild(textArea);
+            textArea.select();
+            document.execCommand('copy');
+            document.body.removeChild(textArea);
+            this.showCopyFeedback('Room code copied to clipboard!');
+        }
+    }
+    
+    showCopyFeedback(message) {
+        // Remove existing feedback
+        const existingFeedback = document.querySelector('.copy-feedback');
+        if (existingFeedback) {
+            existingFeedback.remove();
+        }
+        
+        // Create and show new feedback
+        const feedback = document.createElement('div');
+        feedback.className = 'copy-feedback';
+        feedback.textContent = message;
+        document.body.appendChild(feedback);
+        
+        // Remove feedback after animation
+        setTimeout(() => {
+            if (feedback.parentNode) {
+                feedback.remove();
+            }
+        }, 2000);
     }
     
     showGameInterface() {
@@ -235,16 +327,21 @@ class MultiplayerManager {
         const resultElement = document.getElementById('gameResult');
         const gameEndResult = document.getElementById('gameEndResult');
         
+        // Get player names for better messaging
+        const playerName = this.playerNickname || 'You';
+        const opponentName = data.winnerNickname || 'Opponent';
+        
         if (data.winner === this.playerTeam) {
-            resultElement.textContent = `🎉 Victory! You won!`;
+            resultElement.textContent = `🎉 Victory! ${playerName} won the battle!`;
             resultElement.style.color = '#00ff00';
         } else {
-            resultElement.textContent = `💀 Defeat! ${data.winnerNickname} won the game.`;
+            resultElement.textContent = `💀 Defeat! ${opponentName} defeated ${playerName}!`;
             resultElement.style.color = '#ff4444';
         }
         
         gameEndResult.style.display = 'block';
         this.gameStarted = false;
+        this.clearGameState(); // Clear saved game state when game ends
         
         // Show game over screen
         document.getElementById('gameStatus').style.display = 'block';
@@ -264,6 +361,75 @@ class MultiplayerManager {
     
     notifyGameOver(winner) {
         this.socket.emit('gameOver', { winner: winner });
+    }
+    
+    // Game state persistence methods
+    saveGameState() {
+        const gameState = {
+            currentRoom: this.currentRoom,
+            playerTeam: this.playerTeam,
+            playerId: this.playerId,
+            gameStarted: this.gameStarted,
+            nickname: this.playerNickname,
+            timestamp: Date.now()
+        };
+        localStorage.setItem('rts-game-state', JSON.stringify(gameState));
+        console.log('Game state saved:', gameState);
+    }
+    
+    loadGameState() {
+        const savedState = localStorage.getItem('rts-game-state');
+        if (savedState) {
+            try {
+                return JSON.parse(savedState);
+            } catch (e) {
+                console.error('Error parsing saved game state:', e);
+                localStorage.removeItem('rts-game-state');
+            }
+        }
+        return null;
+    }
+    
+    clearGameState() {
+        localStorage.removeItem('rts-game-state');
+        console.log('Game state cleared');
+    }
+    
+    checkForSavedGame() {
+        const savedState = this.loadGameState();
+        if (savedState && savedState.gameStarted) {
+            const timeSinceLastSave = Date.now() - savedState.timestamp;
+            const fiveMinutes = 5 * 60 * 1000; // 5 minutes in milliseconds
+            
+            if (timeSinceLastSave < fiveMinutes) {
+                console.log('Found recent game session, attempting to reconnect...');
+                this.attemptReconnection(savedState);
+            } else {
+                console.log('Saved game session too old, clearing...');
+                this.clearGameState();
+            }
+        }
+    }
+    
+    attemptReconnection(savedState) {
+        // Set the saved state
+        this.currentRoom = savedState.currentRoom;
+        this.playerTeam = savedState.playerTeam;
+        this.playerId = savedState.playerId;
+        this.playerNickname = savedState.nickname;
+        
+        // Fill in the nickname field
+        if (savedState.nickname) {
+            document.getElementById('nicknameInput').value = savedState.nickname;
+        }
+        
+        // Attempt to rejoin the room
+        console.log('Attempting to rejoin room:', savedState.currentRoom);
+        this.socket.emit('rejoinRoom', {
+            roomCode: savedState.currentRoom,
+            playerId: savedState.playerId,
+            nickname: savedState.nickname
+        });
     }
 }
 

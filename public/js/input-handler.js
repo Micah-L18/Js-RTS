@@ -143,6 +143,9 @@ class InputHandler {
         this.updateMousePosition(e);
         this.updateWorldMousePosition(); // Update world coordinates on mouse move too
         
+        // Check for building hover and update cursor
+        this.updateCursorForBuildingHover();
+        
         if (this.isMouseDown && !this.clickedOnEntity) {
             const distance = this.mousePos.distance(this.dragStart);
             
@@ -153,6 +156,27 @@ class InputHandler {
                 // Update selection box
                 this.updateSelectionBox();
             }
+        }
+    }
+    
+    updateCursorForBuildingHover() {
+        // Don't change cursor if in building placement mode or currently dragging
+        if ((this.game && this.game.buildMode === 'building') || this.isDragging) {
+            return;
+        }
+        
+        // Check if mouse is over a building (using small radius for point detection)
+        const entitiesAtMouse = this.engine.getEntitiesNear(this.worldMousePos, 10);
+        const buildingsAtMouse = entitiesAtMouse.filter(entity => 
+            entity.type === 'building' || entity instanceof Building
+        );
+        
+        if (buildingsAtMouse.length > 0) {
+            // Change cursor to pointer when hovering over buildings
+            this.canvas.style.cursor = 'pointer';
+        } else {
+            // Reset to default cursor
+            this.canvas.style.cursor = 'crosshair';
         }
     }
     
@@ -174,15 +198,17 @@ class InputHandler {
     onWheel(e) {
         e.preventDefault();
         
-        const zoomFactor = 0.1;
+        const zoomFactor = 1.1; // Multiplicative zoom factor
         const zoomDirection = e.deltaY > 0 ? -1 : 1;
         const oldZoom = this.engine.camera.zoom;
+        
+        // Use multiplicative scaling for more natural feel
         const newZoom = MathUtils.clamp(
-            oldZoom + (zoomDirection * zoomFactor),
+            zoomDirection > 0 ? oldZoom * zoomFactor : oldZoom / zoomFactor,
             0.5, 3.0
         );
         
-        if (oldZoom === newZoom) return; // No zoom change
+        if (Math.abs(oldZoom - newZoom) < 0.001) return; // No significant zoom change
         
         // Get world position under mouse before zoom
         const mouseWorldPos = this.engine.screenToWorld(this.mousePos.x, this.mousePos.y);
@@ -193,7 +219,7 @@ class InputHandler {
         // Calculate where the mouse world position is now in screen coordinates
         const newMouseScreenPos = this.engine.worldToScreen(mouseWorldPos.x, mouseWorldPos.y);
         
-        // Adjust camera to keep the world point under the mouse
+        // Adjust camera to keep the world point under the mouse cursor
         const deltaX = (this.mousePos.x - newMouseScreenPos.x) / newZoom;
         const deltaY = (this.mousePos.y - newMouseScreenPos.y) / newZoom;
         
@@ -327,6 +353,8 @@ class InputHandler {
     
     updateMousePosition(e) {
         const rect = this.canvas.getBoundingClientRect();
+        
+        // Simple coordinate calculation without DPR scaling
         this.mousePos.x = e.clientX - rect.left;
         this.mousePos.y = e.clientY - rect.top;
     }
@@ -587,6 +615,9 @@ class InputHandler {
             const alpha = Math.max(0, 1 - progress);
             
             if (alpha > 0) {
+                // Convert world position to screen position
+                const screenPos = this.engine.worldToScreen(target.position.x, target.position.y);
+                
                 ctx.save();
                 
                 // Animated expanding circle
@@ -599,14 +630,14 @@ class InputHandler {
                 ctx.fillStyle = `rgba(0, 255, 0, ${alpha * 0.2})`;
                 ctx.lineWidth = 2;
                 ctx.beginPath();
-                ctx.arc(target.position.x, target.position.y, radius, 0, Math.PI * 2);
+                ctx.arc(screenPos.x, screenPos.y, radius, 0, Math.PI * 2);
                 ctx.fill();
                 ctx.stroke();
                 
                 // Inner dot
                 ctx.fillStyle = `rgba(0, 255, 0, ${alpha})`;
                 ctx.beginPath();
-                ctx.arc(target.position.x, target.position.y, 3, 0, Math.PI * 2);
+                ctx.arc(screenPos.x, screenPos.y, 3, 0, Math.PI * 2);
                 ctx.fill();
                 
                 // Directional arrows (4 small arrows pointing outward)
@@ -614,8 +645,8 @@ class InputHandler {
                 const arrowRadius = radius + 5;
                 for (let i = 0; i < 4; i++) {
                     const angle = (i * Math.PI * 0.5) + (progress * Math.PI * 0.25); // Slight rotation animation
-                    const arrowX = target.position.x + Math.cos(angle) * arrowRadius;
-                    const arrowY = target.position.y + Math.sin(angle) * arrowRadius;
+                    const arrowX = screenPos.x + Math.cos(angle) * arrowRadius;
+                    const arrowY = screenPos.y + Math.sin(angle) * arrowRadius;
                     
                     ctx.strokeStyle = `rgba(255, 255, 0, ${alpha})`;
                     ctx.lineWidth = 2;
