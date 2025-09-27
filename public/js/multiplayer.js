@@ -76,6 +76,11 @@ class MultiplayerManager {
             this.handleGameOver(data);
         });
         
+        // Lobby count updates
+        this.socket.on('lobbyCountUpdate', (data) => {
+            this.updateLobbyCount(data.count);
+        });
+        
         // Player disconnected
         this.socket.on('playerDisconnected', (data) => {
             console.log('Other player disconnected');
@@ -120,6 +125,16 @@ class MultiplayerManager {
                 return;
             }
             this.createRoom(nickname);
+        });
+        
+        // Quick Game button
+        document.getElementById('quickGameBtn').addEventListener('click', () => {
+            const nickname = document.getElementById('nicknameInput').value.trim();
+            if (!nickname) {
+                alert('Please enter a nickname');
+                return;
+            }
+            this.quickGame(nickname);
         });
         
         // Join room button
@@ -169,6 +184,11 @@ class MultiplayerManager {
     joinRoom(roomCode, nickname) {
         console.log('Joining room:', roomCode);
         this.socket.emit('joinRoom', { roomCode: roomCode, nickname: nickname });
+    }
+    
+    quickGame(nickname) {
+        console.log('Finding quick game...');
+        this.socket.emit('quickGame', { nickname: nickname });
     }
     
     startGame() {
@@ -298,6 +318,15 @@ class MultiplayerManager {
             `;
         }
         playersList.appendChild(player2Div);
+    }
+    
+    updateLobbyCount(count) {
+        const lobbyCountText = document.getElementById('lobbyCountText');
+        if (lobbyCountText) {
+            const emoji = count > 0 ? '🟢' : '🔴';
+            const text = count === 1 ? '1 lobby available' : `${count} lobbies available`;
+            lobbyCountText.textContent = `${emoji} ${text}`;
+        }
     }
     
     initializeGame() {

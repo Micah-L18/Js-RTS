@@ -11,6 +11,23 @@ const PORT = 3117;
 // Game rooms storage
 const gameRooms = new Map();
 
+// Function to count available public lobbies
+function getAvailableLobbiesCount() {
+    let count = 0;
+    for (const [roomCode, room] of gameRooms) {
+        if (room.players.length === 1 && !room.gameStarted && room.isPublic) {
+            count++;
+        }
+    }
+    return count;
+}
+
+// Function to broadcast lobby count to all connected clients
+function broadcastLobbyCount() {
+    const availableLobbies = getAvailableLobbiesCount();
+    io.emit('lobbyCountUpdate', { count: availableLobbies });
+}
+
 // Serve static files from the public directory
 app.use(express.static(path.join(__dirname, 'public')));
 
@@ -30,6 +47,10 @@ app.get('/api/gamestate', (req, res) => {
 // Socket.IO connection handling
 io.on('connection', (socket) => {
     console.log(`Player connected: ${socket.id}`);
+    
+    // Send current lobby count to new connection
+    const availableLobbies = getAvailableLobbiesCount();
+    socket.emit('lobbyCountUpdate', { count: availableLobbies });
     
     // Handle room creation
     socket.on('createRoom', (data) => {
@@ -94,6 +115,78 @@ io.on('connection', (socket) => {
         });
         
         console.log(`Player ${data.nickname} (${socket.id}) joined room ${data.roomCode}`);
+        
+        // Broadcast updated lobby count (room no longer available for quick game)
+        broadcastLobbyCount();
+    });
+    
+    // Handle quick game (join any available public room)
+    socket.on('quickGame', (data) => {
+        console.log(`Player ${data.nickname} (${socket.id}) looking for quick game`);
+        
+        // Find an available room with only 1 player that's not started
+        let availableRoom = null;
+        for (const [roomCode, room] of gameRooms) {
+            if (room.players.length === 1 && !room.gameStarted && room.isPublic) {
+                availableRoom = { roomCode, room };
+                break;
+            }
+        }
+        
+        if (availableRoom) {
+            // Join existing room
+            const { roomCode, room } = availableRoom;
+            room.players.push({ id: socket.id, team: 'enemy', nickname: data.nickname });
+            socket.join(roomCode);
+            socket.currentRoom = roomCode;
+            socket.nickname = data.nickname;
+            
+            socket.emit('roomJoined', {
+                roomCode: roomCode,
+                playerTeam: 'enemy',
+                playerId: socket.id,
+                nickname: data.nickname
+            });
+            
+            // Notify both players that room is ready
+            io.to(roomCode).emit('playersReady', {
+                players: room.players,
+                canStart: room.players.length === 2
+            });
+            
+            console.log(`Quick game: Player ${data.nickname} joined existing room ${roomCode}`);
+            
+            // Broadcast updated lobby count (room no longer available)
+            broadcastLobbyCount();
+        } else {
+            // Create new room for others to join
+            const roomCode = generateRoomCode();
+            const room = {
+                id: roomCode,
+                players: [{ id: socket.id, team: 'player', nickname: data.nickname }],
+                gameStarted: false,
+                createdAt: Date.now(),
+                isPublic: true // Mark as public for quick game matching
+            };
+            
+            gameRooms.set(roomCode, room);
+            socket.join(roomCode);
+            socket.currentRoom = roomCode;
+            socket.nickname = data.nickname;
+            
+            socket.emit('roomCreated', {
+                roomCode: roomCode,
+                playerTeam: 'player',
+                playerId: socket.id,
+                nickname: data.nickname,
+                isQuickGame: true
+            });
+            
+            console.log(`Quick game: Created new public room ${roomCode} for ${data.nickname}`);
+            
+            // Broadcast updated lobby count (new room available)
+            broadcastLobbyCount();
+        }
     });
     
     // Handle room rejoining
