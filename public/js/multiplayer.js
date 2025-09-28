@@ -9,6 +9,17 @@ class MultiplayerManager {
         this.playerId = null;
         this.gameStarted = false;
         
+        // Connection status tracking
+        this.isConnected = false;
+        this.hasTriedAutoReconnect = false;
+        this.connectionStatusElement = null;
+        
+        // Connect client logger to socket
+        if (window.clientLogger) {
+            window.clientLogger.setSocket(this.socket);
+            window.clientLogger.logEvent('multiplayer', 'manager_initialized', 'Multiplayer manager and socket initialized');
+        }
+        
         // Check for saved game state on page load
         this.checkForSavedGame();
         
@@ -113,6 +124,51 @@ class MultiplayerManager {
             console.log('Failed to rejoin room:', message);
             this.clearGameState();
             alert('Could not reconnect to your previous game: ' + message);
+        });
+        
+        // Socket.io connection events for auto-reconnection
+        this.socket.on('connect', () => {
+            console.log('Connected to server');
+            this.isConnected = true;
+            this.hideConnectionStatus();
+            
+            // If we were in a game and this is a reconnection, try to rejoin
+            if (this.currentRoom && !this.hasTriedAutoReconnect) {
+                console.log('Auto-reconnecting to room:', this.currentRoom);
+                this.hasTriedAutoReconnect = true;
+                this.socket.emit('rejoinRoom', {
+                    roomCode: this.currentRoom,
+                    playerId: this.playerId,
+                    nickname: this.playerNickname
+                });
+            }
+        });
+        
+        this.socket.on('disconnect', (reason) => {
+            console.log('Disconnected from server:', reason);
+            this.isConnected = false;
+            this.showConnectionStatus('Disconnected from server. Attempting to reconnect...');
+            this.hasTriedAutoReconnect = false;
+        });
+        
+        this.socket.on('connect_error', (error) => {
+            console.log('Connection error:', error);
+            this.showConnectionStatus('Connection failed. Retrying...');
+        });
+        
+        this.socket.on('reconnect', (attemptNumber) => {
+            console.log('Reconnected after', attemptNumber, 'attempts');
+            this.showConnectionStatus('Reconnected!', 2000); // Show for 2 seconds then hide
+        });
+        
+        this.socket.on('reconnect_attempt', (attemptNumber) => {
+            console.log('Reconnection attempt', attemptNumber);
+            this.showConnectionStatus(`Reconnecting... (attempt ${attemptNumber})`);
+        });
+        
+        this.socket.on('reconnect_failed', () => {
+            console.log('Reconnection failed');
+            this.showConnectionStatus('Could not reconnect to server. Please refresh the page.');
         });
     }
     
@@ -459,6 +515,61 @@ class MultiplayerManager {
             playerId: savedState.playerId,
             nickname: savedState.nickname
         });
+    }
+    
+    showConnectionStatus(message, autoHideDelay = null) {
+        // Create or get the connection status element
+        let statusElement = document.getElementById('connectionStatus');
+        
+        if (!statusElement) {
+            statusElement = document.createElement('div');
+            statusElement.id = 'connectionStatus';
+            statusElement.style.cssText = `
+                position: fixed;
+                top: 20px;
+                left: 50%;
+                transform: translateX(-50%);
+                background: rgba(255, 165, 0, 0.95);
+                color: white;
+                padding: 12px 24px;
+                border-radius: 8px;
+                font-size: 14px;
+                font-weight: bold;
+                z-index: 2001;
+                box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+                text-align: center;
+                min-width: 200px;
+            `;
+            document.body.appendChild(statusElement);
+        }
+        
+        statusElement.textContent = message;
+        statusElement.style.display = 'block';
+        
+        // Change color based on message type
+        if (message.includes('Reconnected')) {
+            statusElement.style.background = 'rgba(0, 255, 0, 0.95)';
+        } else if (message.includes('failed') || message.includes('Could not')) {
+            statusElement.style.background = 'rgba(255, 0, 0, 0.95)';
+        } else {
+            statusElement.style.background = 'rgba(255, 165, 0, 0.95)';
+        }
+        
+        // Auto-hide if specified
+        if (autoHideDelay) {
+            setTimeout(() => {
+                this.hideConnectionStatus();
+            }, autoHideDelay);
+        }
+        
+        this.connectionStatusElement = statusElement;
+    }
+    
+    hideConnectionStatus() {
+        const statusElement = document.getElementById('connectionStatus');
+        if (statusElement) {
+            statusElement.style.display = 'none';
+        }
     }
 }
 

@@ -361,23 +361,39 @@ class Unit {
     performAttack(target) {
         if (!target || target.isDead) return;
         
-        // In multiplayer, only the owner of this unit should calculate damage
-        const isMyUnit = !window.game || !window.game.isMultiplayer || this.team === window.game.playerTeam;
+        // In multiplayer, only the owner of the ATTACKER should calculate damage
+        // This ensures each player has authority over their own units' attacks
+        const isMultiplayer = window.game && window.game.isMultiplayer === true;
+        const isMyUnit = !isMultiplayer || this.team === window.game.playerTeam;
+        
+        // Debug logging for authority check
+        console.log(`AUTHORITY CHECK: Unit ${this.id} (team: ${this.team}) attacking ${target.id} (team: ${target.team})`);
+        console.log(`  isMultiplayer: ${isMultiplayer}, playerTeam: ${window.game ? window.game.playerTeam : 'N/A'}`);
+        console.log(`  this.team === playerTeam: ${this.team === (window.game ? window.game.playerTeam : 'N/A')}`);
+        console.log(`  isMyUnit (has authority): ${isMyUnit}`);
         
         // Create visual effects
         this.createAttackEffects(target);
         
-        // Only apply damage if this is our unit (authoritative)
+        // Only apply damage if this is our unit attacking (authoritative for our own units)
         if (isMyUnit) {
-            target.takeDamage(this.damage);
-            console.log(`${this.constructor.name} attacked ${target.constructor.name} for ${this.damage} damage`);
+            let damageToApply = this.damage;
             
-            // Send attack performed event to other players
-            if (window.game && window.game.isMultiplayer) {
-                window.game.sendMultiplayerAction('attackPerformed', {
+            // Reduce damage against buildings for balance
+            if (target instanceof Building) {
+                damageToApply = Math.floor(this.damage * 0.5); // 50% damage to buildings
+            }
+            
+            target.takeDamage(damageToApply, false, this); // Pass the attacker for auto-defense
+            console.log(`${this.constructor.name} attacked ${target.constructor.name} for ${damageToApply} damage`);
+            
+            // Send damage event to other players
+            if (isMultiplayer) {
+                window.game.sendMultiplayerAction('unitDamage', {
                     attackerId: this.id,
                     targetId: target.id,
-                    team: this.team,
+                    damage: damageToApply,
+                    targetTeam: target.team,
                     timestamp: Date.now()
                 });
             }
@@ -409,9 +425,18 @@ class Unit {
         }
     }
     
-    takeDamage(amount, fromMultiplayer = false) {
+    takeDamage(amount, fromMultiplayer = false, attacker = null) {
         this.health = Math.max(0, this.health - amount);
         console.log(`${this.constructor.name} took ${amount} damage, health: ${this.health}/${this.maxHealth}`);
+        
+        // Auto-defense: if we're idle and not dead, fight back!
+        if (attacker && !this.isDead && this.state === 'idle' && this.canAttack()) {
+            // Only auto-defend if the attacker is an enemy unit (not building)
+            if (attacker instanceof Unit && attacker.team !== this.team) {
+                console.log(`${this.constructor.name} auto-defending against ${attacker.constructor.name}!`);
+                this.attackUnit(attacker);
+            }
+        }
         
         // Send damage event to other players (only if not already from multiplayer)
         if (!fromMultiplayer && window.game && window.game.isMultiplayer) {

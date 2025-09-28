@@ -356,7 +356,7 @@ class Building {
         return true;
     }
     
-    takeDamage(amount) {
+    takeDamage(amount, fromMultiplayer = false, attacker = null) {
         this.health = Math.max(0, this.health - amount);
         
         if (this.health <= 0) {
@@ -716,28 +716,35 @@ class Turret extends Building {
     performAttack(target) {
         if (!target || target.isDead) return;
         
-        // In multiplayer, only the owner of this turret should calculate damage
-        // In single player, all turrets can deal damage
+        // In multiplayer, turrets should always be able to deal damage regardless of team
+        // Each player simulates all turret damage to ensure turrets can actually kill units
+        // This is different from units where only the owner has authority
         const isMultiplayer = window.game && window.game.isMultiplayer === true;
-        const isMyTurret = !isMultiplayer || this.team === window.game.playerTeam;
+        const isMyBuilding = !isMultiplayer || this.team === window.game.playerTeam;
+        
+        // Debug logging for turret authority check
+        console.log(`TURRET AUTHORITY: ${this.constructor.name} ${this.id} (team: ${this.team}) attacking ${target.constructor.name} ${target.id} (team: ${target.team})`);
+        console.log(`  isMultiplayer: ${isMultiplayer}, playerTeam: ${window.game ? window.game.playerTeam : 'N/A'}`);
+        console.log(`  this.team === playerTeam: ${this.team === (window.game ? window.game.playerTeam : 'N/A')}`);
+        console.log(`  isMyBuilding: ${isMyBuilding}, but turrets always have authority in multiplayer`);
         
         // Create visual effects
         this.createAttackEffects(target);
         
-        // Only apply damage if this is our turret (authoritative)
-        if (isMyTurret) {
-            target.takeDamage(this.damage);
-            console.log(`${this.constructor.name} attacked ${target.constructor.name} for ${this.damage} damage`);
-            
-            // Send attack performed event to other players
-            if (isMultiplayer) {
-                window.game.sendMultiplayerAction('turretAttack', {
-                    turretId: this.id,
-                    targetId: target.id,
-                    team: this.team,
-                    timestamp: Date.now()
-                });
-            }
+        // Turrets always apply damage in multiplayer (unlike units which need ownership authority)
+        // This ensures turrets can actually kill enemy troops as intended
+        target.takeDamage(this.damage, false, this); // Pass the turret as attacker
+        console.log(`${this.constructor.name} attacked ${target.constructor.name} for ${this.damage} damage`);
+        
+        // Send damage event to other players
+        if (isMultiplayer) {
+            window.game.sendMultiplayerAction('turretDamage', {
+                turretId: this.id,
+                targetId: target.id,
+                damage: this.damage,
+                targetTeam: target.team,
+                timestamp: Date.now()
+            });
         }
     }
     

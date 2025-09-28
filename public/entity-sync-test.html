@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Entity Sync Test - Halo Wars RTS</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background: #001122;
+            color: white;
+        }
+        .test-section {
+            background: #002233;
+            padding: 20px;
+            margin: 20px 0;
+            border: 1px solid #334455;
+            border-radius: 5px;
+        }
+        .entity-list {
+            margin: 10px 0;
+            padding: 10px;
+            background: #003344;
+            border-radius: 3px;
+        }
+        .entity {
+            margin: 5px 0;
+            padding: 5px;
+            background: #004455;
+            border-radius: 3px;
+            font-family: monospace;
+        }
+        .player-entities {
+            border-left: 3px solid #00ff00;
+        }
+        .enemy-entities {
+            border-left: 3px solid #ff0000;
+        }
+        .status {
+            font-size: 14px;
+            margin: 10px 0;
+        }
+        .ok { color: #00ff00; }
+        .error { color: #ff0000; }
+        .warning { color: #ffaa00; }
+        button {
+            background: #0066cc;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            margin: 5px;
+            cursor: pointer;
+            border-radius: 3px;
+        }
+        button:hover {
+            background: #0088ff;
+        }
+    </style>
+</head>
+<body>
+    <h1>Entity Synchronization Test</h1>
+    <div id="status" class="status">Initializing...</div>
+    
+    <div class="test-section">
+        <h2>Current Entities</h2>
+        <button onclick="refreshEntities()">Refresh Entity List</button>
+        <button onclick="testUnitSpawn()">Test Unit Spawn</button>
+        <button onclick="testAttackCommand()">Test Attack Command</button>
+        
+        <div id="entityList" class="entity-list">
+            <div class="status">Loading entities...</div>
+        </div>
+    </div>
+    
+    <div class="test-section">
+        <h2>Debug Console</h2>
+        <div id="debugLog" style="height: 300px; overflow-y: scroll; background: #000; padding: 10px; font-family: monospace; font-size: 12px;">
+        </div>
+    </div>
+
+    <script>
+        // Capture console logs for display
+        const originalConsoleLog = console.log;
+        const debugLog = document.getElementById('debugLog');
+        let logCount = 0;
+        
+        console.log = function(...args) {
+            originalConsoleLog.apply(console, args);
+            
+            const logEntry = document.createElement('div');
+            logEntry.innerHTML = `<span style="color: #666">${new Date().toLocaleTimeString()}</span> ${args.join(' ')}`;
+            debugLog.appendChild(logEntry);
+            
+            // Limit log entries
+            logCount++;
+            if (logCount > 100) {
+                debugLog.removeChild(debugLog.firstChild);
+                logCount--;
+            }
+            
+            debugLog.scrollTop = debugLog.scrollHeight;
+        };
+
+        let game = null;
+        
+        // Initialize a test game instance
+        function initializeTest() {
+            console.log('🧪 Initializing Entity Sync Test...');
+            
+            // Create a fake canvas for the game engine
+            const canvas = document.createElement('canvas');
+            canvas.id = 'gameCanvas';
+            canvas.width = 800;
+            canvas.height = 600;
+            canvas.style.display = 'none';
+            document.body.appendChild(canvas);
+            
+            try {
+                // Initialize game components
+                window.game = new Game();
+                window.game.engine = new GameEngine();
+                window.game.engine.init();
+                
+                // Set up as multiplayer test
+                window.game.isMultiplayer = true;
+                window.game.playerTeam = 'player';
+                
+                // Create initial test entities
+                createTestEntities();
+                
+                game = window.game;
+                document.getElementById('status').innerHTML = '<span class="ok">✅ Test initialized successfully</span>';
+                refreshEntities();
+                
+            } catch (error) {
+                console.error('❌ Test initialization failed:', error);
+                document.getElementById('status').innerHTML = `<span class="error">❌ Initialization failed: ${error.message}</span>`;
+            }
+        }
+        
+        function createTestEntities() {
+            console.log('🏗️ Creating test entities...');
+            
+            // Create player entities
+            const playerMarine1 = new Marine(100, 100, 'player');
+            playerMarine1.id = 'test_marine1_player';
+            game.engine.addEntity(playerMarine1);
+            
+            const playerBase = new Base(50, 50, 'player');
+            playerBase.id = 'test_base_player';
+            playerBase.isUnderConstruction = false;
+            game.engine.addEntity(playerBase);
+            
+            // Create enemy entities
+            const enemyMarine1 = new Marine(200, 200, 'enemy');
+            enemyMarine1.id = 'test_marine1_enemy';
+            game.engine.addEntity(enemyMarine1);
+            
+            const enemyTurret = new Turret(250, 250, 'enemy');
+            enemyTurret.id = 'test_turret_enemy';
+            enemyTurret.isUnderConstruction = false;
+            game.engine.addEntity(enemyTurret);
+            
+            console.log(`✅ Created ${game.engine.entities.length} test entities`);
+        }
+        
+        function refreshEntities() {
+            if (!game || !game.engine) {
+                document.getElementById('entityList').innerHTML = '<div class="error">❌ Game not initialized</div>';
+                return;
+            }
+            
+            const playerEntities = game.engine.entities.filter(e => e.team === 'player');
+            const enemyEntities = game.engine.entities.filter(e => e.team === 'enemy');
+            
+            let html = `
+                <h3>Player Entities (${playerEntities.length})</h3>
+                <div class="entity-list player-entities">
+            `;
+            
+            playerEntities.forEach(entity => {
+                html += `<div class="entity">${entity.constructor.name} - ID: ${entity.id} - Health: ${entity.health}/${entity.maxHealth}</div>`;
+            });
+            
+            html += `
+                </div>
+                <h3>Enemy Entities (${enemyEntities.length})</h3>
+                <div class="entity-list enemy-entities">
+            `;
+            
+            enemyEntities.forEach(entity => {
+                html += `<div class="entity">${entity.constructor.name} - ID: ${entity.id} - Health: ${entity.health}/${entity.maxHealth}</div>`;
+            });
+            
+            html += '</div>';
+            
+            document.getElementById('entityList').innerHTML = html;
+            
+            console.log(`📊 Entity count - Player: ${playerEntities.length}, Enemy: ${enemyEntities.length}, Total: ${game.engine.entities.length}`);
+        }
+        
+        function testUnitSpawn() {
+            console.log('🧪 Testing unit spawn synchronization...');
+            
+            // Simulate a remote unit spawn
+            const testUnitData = {
+                unitType: 'marine',
+                position: { x: 150, y: 150 },
+                team: 'enemy',
+                unitId: 'test_remote_marine_' + Date.now(),
+                buildingId: 'test_base_enemy'
+            };
+            
+            console.log('📡 Simulating remote unit spawn:', testUnitData);
+            game.handleRemoteUnitSpawn(testUnitData);
+            
+            setTimeout(() => {
+                refreshEntities();
+                console.log('✅ Unit spawn test completed');
+            }, 100);
+        }
+        
+        function testAttackCommand() {
+            console.log('🧪 Testing attack command synchronization...');
+            
+            const playerEntities = game.engine.entities.filter(e => e.team === 'player');
+            const enemyEntities = game.engine.entities.filter(e => e.team === 'enemy');
+            
+            if (playerEntities.length === 0 || enemyEntities.length === 0) {
+                console.error('❌ Need both player and enemy entities for attack test');
+                return;
+            }
+            
+            const attacker = enemyEntities[0];
+            const target = playerEntities[0];
+            
+            // Simulate a remote attack command
+            const attackData = {
+                attackerId: attacker.id,
+                targetId: target.id,
+                team: attacker.team
+            };
+            
+            console.log('⚔️ Simulating remote attack:', attackData);
+            game.handleRemoteAttack(attackData);
+            
+            setTimeout(() => {
+                refreshEntities();
+                console.log('✅ Attack command test completed');
+            }, 100);
+        }
+        
+        // Initialize when page loads
+        window.onload = function() {
+            // Wait for scripts to load
+            setTimeout(initializeTest, 1000);
+        };
+    </script>
+    
+    <!-- Load game scripts in correct order -->
+    <script src="js/math-utils.js"></script>
+    <script src="js/game-engine.js"></script>
+    <script src="js/units.js"></script>
+    <script src="js/buildings.js"></script>
+    <script src="js/game.js"></script>
+</body>
+</html>

@@ -324,7 +324,9 @@ class UIRenderer {
             const buildingType = button.getAttribute('data-building');
             const cost = BuildingFactory.getBuildingCost(buildingType);
             
-            const canAfford = window.game.resources.canAfford(cost.supplies, cost.power);
+            // Buildings don't consume population, only check supplies and power
+            const canAfford = window.game.resources.supplies >= cost.supplies && 
+                             window.game.resources.power >= cost.power;
             button.disabled = !canAfford;
             
             if (!canAfford) {

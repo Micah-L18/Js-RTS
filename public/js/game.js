@@ -19,11 +19,16 @@ class Game {
         this.playerTeam = 'player';
         this.multiplayerManager = null;
         this.positionSyncTimer = null;
+        this.backgroundUpdateTimer = null; // Background timer for multiplayer updates
         
         // Building queue system
         this.buildingQueue = [];
         this.currentlyBuilding = null;
         this.buildingQueueTimer = null;
+        
+        // Pending attacks queue for message ordering
+        this.pendingAttacks = [];
+        this.pendingAttackTimer = null;
         
         // Don't auto-initialize in multiplayer mode
         if (!window.multiplayerManager) {
@@ -292,31 +297,31 @@ class Game {
                 const playerBase = new Base(playerBasePos.x, playerBasePos.y, this.playerTeam);
                 playerBase.isUnderConstruction = false;
                 playerBase.id = `base_${this.playerTeam}`; // Deterministic ID
-                this.engine.entities.push(playerBase); // Add directly to avoid ID generation
+                this.engine.addEntity(playerBase); // Use addEntity which respects existing ID
                 
                 const enemyBase = new Base(enemyBasePos.x, enemyBasePos.y, this.playerTeam === 'player' ? 'enemy' : 'player');
                 enemyBase.isUnderConstruction = false;
                 enemyBase.id = `base_${this.playerTeam === 'player' ? 'enemy' : 'player'}`; // Deterministic ID
-                this.engine.entities.push(enemyBase); // Add directly to avoid ID generation
+                this.engine.addEntity(enemyBase); // Use addEntity which respects existing ID
                 
                 // Create starting units with deterministic IDs
                 const marine1 = new Marine(playerUnitPos.x, playerUnitPos.y, this.playerTeam);
                 marine1.id = `marine1_${this.playerTeam}`;
-                this.engine.entities.push(marine1);
+                this.engine.addEntity(marine1);
                 
                 const marine2 = new Marine(playerUnitPos.x + 30, playerUnitPos.y, this.playerTeam);
                 marine2.id = `marine2_${this.playerTeam}`;
-                this.engine.entities.push(marine2);
+                this.engine.addEntity(marine2);
                 
                 // Create enemy starting units that both players can see
                 const enemyTeam = this.playerTeam === 'player' ? 'enemy' : 'player';
                 const enemyMarine1 = new Marine(enemyUnitPos.x, enemyUnitPos.y, enemyTeam);
                 enemyMarine1.id = `marine1_${enemyTeam}`;
-                this.engine.entities.push(enemyMarine1);
+                this.engine.addEntity(enemyMarine1);
                 
                 const enemyMarine2 = new Marine(enemyUnitPos.x + 30, enemyUnitPos.y, enemyTeam);
                 enemyMarine2.id = `marine2_${enemyTeam}`;
-                this.engine.entities.push(enemyMarine2);
+                this.engine.addEntity(enemyMarine2);
                 
                 // Set camera to player's starting position
                 this.engine.setCameraPosition(cameraPos.x, cameraPos.y);
@@ -384,6 +389,52 @@ class Game {
         this.positionSyncTimer = setInterval(() => {
             this.sendPositionSync();
         }, 1000); // Sync every second
+        
+        // Start background update timer to handle multiplayer messages even when tab is not focused
+        console.log('🔄 Starting background multiplayer update timer...');
+        this.backgroundUpdateTimer = setInterval(() => {
+            this.backgroundMultiplayerUpdate();
+        }, 50); // Update every 50ms (20fps) to ensure message processing continues
+    }
+    
+    // Background multiplayer update - runs independently of visual frame loop
+    backgroundMultiplayerUpdate() {
+        if (!this.isMultiplayer) return;
+        
+        // Process pending attacks that were delayed due to missing entities
+        if (this.pendingAttacks.length > 0) {
+            this.processPendingAttacks();
+        }
+        
+        // Process any queued building operations
+        if (this.buildingQueue.length > 0 && !this.currentlyBuilding) {
+            this.processBuildingQueue();
+        }
+        
+        // Update entity states that are critical for multiplayer sync
+        // (Only update essential properties, not visual rendering)
+        const now = Date.now();
+        this.engine.entities.forEach(entity => {
+            // Update health/death states
+            if (entity.health <= 0 && !entity.isDead) {
+                entity.die();
+            }
+            
+            // Update building construction progress
+            if (typeof Building !== 'undefined' && entity instanceof Building && entity.isUnderConstruction) {
+                const constructionElapsed = now - entity.constructionStartTime;
+                entity.constructionProgress = Math.min(1, constructionElapsed / entity.constructionTime);
+                
+                if (entity.constructionProgress >= 1) {
+                    entity.isUnderConstruction = false;
+                    entity.isActive = true;
+                }
+            }
+        });
+        
+        // Clean up dead entities to prevent memory leaks
+        this.engine.entities = this.engine.entities.filter(entity => !entity.isDead);
+        this.engine.selectedEntities = this.engine.selectedEntities.filter(entity => !entity.isDead);
     }
     
     // Handle actions from remote players
@@ -417,6 +468,9 @@ class Game {
                 break;
             case 'unitDamage':
                 this.handleRemoteUnitDamage(data);
+                break;
+            case 'turretDamage':
+                this.handleRemoteTurretDamage(data);
                 break;
             case 'turretTarget':
                 this.handleRemoteTurretTarget(data);
@@ -476,7 +530,7 @@ class Game {
                 const building = BuildingFactory.create(data.type, data.position.x, data.position.y, data.team);
                 // Set the same ID to keep sync
                 building.id = data.buildingId;
-                this.engine.entities.push(building); // Add directly to avoid generating new ID
+                this.engine.addEntity(building); // Use addEntity which respects existing ID
                 console.log(`Remote building placed: ${data.type} by ${data.team} at (${data.position.x}, ${data.position.y})`);
             } catch (error) {
                 console.error('Error placing remote building:', error);
@@ -537,7 +591,8 @@ class Game {
     }
     
     handleRemoteUnitSpawn(data) {
-        // Only spawn enemy units remotely
+        // Spawn all units remotely for attack synchronization to work properly
+        // Skip only units that belong to our own team (to avoid duplicates)
         if (data.team !== this.playerTeam) {
             // Find the building that spawned this unit to use its collision system
             const building = this.engine.entities.find(e => e.id === data.buildingId && e.type === 'building');
@@ -564,7 +619,7 @@ class Game {
             const unit = UnitFactory.create(data.unitType, spawnPos.x, spawnPos.y, data.team);
             // Set the same ID to keep sync
             unit.id = data.unitId;
-            this.engine.entities.push(unit); // Add directly to avoid generating new ID
+            this.engine.addEntity(unit); // Use addEntity which respects existing ID
             console.log(`Remote unit spawned: ${data.unitType} by ${data.team} at (${spawnPos.x}, ${spawnPos.y})`);
         }
     }
@@ -572,18 +627,113 @@ class Game {
     handleRemoteAttack(data) {
         const attacker = this.engine.entities.find(e => e.id === data.attackerId);
         const target = this.engine.entities.find(e => e.id === data.targetId);
-        if (attacker && target && attacker.team !== this.playerTeam) {
-            // Set attack target for enemy unit so we see the visual attack
-            attacker.attackUnit(target);
+        
+        // Debug logging for attack synchronization
+        console.log(`🔍 REMOTE ATTACK DEBUG - Processing attack from ${data.team}`);
+        console.log(`   Attacker ID: ${data.attackerId}`);
+        console.log(`   Target ID: ${data.targetId}`);
+        console.log(`   Current entity count: ${this.engine.entities.length}`);
+        console.log(`   Attacker found: ${attacker ? `${attacker.constructor.name} (team: ${attacker.team})` : 'NOT FOUND'}`);
+        console.log(`   Target found: ${target ? `${target.constructor.name} (team: ${target.team})` : 'NOT FOUND'}`);
+        
+        if (attacker && target) {
+            if (attacker.team !== this.playerTeam) {
+                // Enemy unit attacking - show visual attack
+                console.log(`   ✅ Team check passed: ${attacker.team} attacking ${target.team}`);
+                console.log(`   🎯 Successfully processing remote attack: ${attacker.constructor.name} → ${target.constructor.name}`);
+                attacker.attackUnit(target);
+            } else {
+                // Own unit attacking - this shouldn't happen but let's log it
+                console.log(`   ⚠️ Own unit attack command received remotely - this indicates a synchronization issue`);
+            }
+        } else {
+            console.log(`   🚨 Entity synchronization issue detected!`);
+            
+            // Check if this is a timing issue - queue for retry
+            if (!data.retryCount) data.retryCount = 0;
+            
+            if (data.retryCount < 5) { // Max 5 retries
+                data.retryCount++;
+                data.retryTime = Date.now() + 200; // Wait 200ms before retry
+                
+                this.pendingAttacks.push(data);
+                console.log(`   ⏳ Queueing attack for retry #${data.retryCount} (${data.attackerId} → ${data.targetId})`);
+                
+                // Start the pending attacks processor if not running
+                if (!this.pendingAttackTimer) {
+                    this.startPendingAttackProcessor();
+                }
+                return;
+            }
+            
+            // Group entities by team for clearer debugging
+            const playerEntities = this.engine.entities.filter(e => e.team === 'player');
+            const enemyEntities = this.engine.entities.filter(e => e.team === 'enemy');
+            
+            console.log(`   Player team entities (${playerEntities.length}):`, 
+                playerEntities.map(e => `${e.constructor.name}:${e.id}`));
+            console.log(`   Enemy team entities (${enemyEntities.length}):`, 
+                enemyEntities.map(e => `${e.constructor.name}:${e.id}`));
+            
+            // List missing entity details
+            const missingEntities = [];
+            if (!attacker) missingEntities.push(data.attackerId);
+            if (!target) missingEntities.push(data.targetId);
+            
+            console.log(`   ❌ Skipping remote attack after ${data.retryCount} retries - attacker or target not found`);
+            console.log(`     Missing target entities: ${missingEntities.join(', ')}`);
+        }
+    }
+    
+    startPendingAttackProcessor() {
+        console.log('🔄 Starting pending attack processor...');
+        this.pendingAttackTimer = setInterval(() => {
+            this.processPendingAttacks();
+        }, 50); // Check every 50ms
+    }
+    
+    processPendingAttacks() {
+        const now = Date.now();
+        const attacksToProcess = [];
+        
+        // Find attacks that are ready to retry
+        for (let i = this.pendingAttacks.length - 1; i >= 0; i--) {
+            const attack = this.pendingAttacks[i];
+            if (now >= attack.retryTime) {
+                attacksToProcess.push(attack);
+                this.pendingAttacks.splice(i, 1);
+            }
+        }
+        
+        // Process ready attacks
+        for (const attack of attacksToProcess) {
+            console.log(`🔄 Retrying pending attack (attempt ${attack.retryCount}): ${attack.attackerId} → ${attack.targetId}`);
+            this.handleRemoteAttack(attack);
+        }
+        
+        // Stop processor if no more pending attacks
+        if (this.pendingAttacks.length === 0 && this.pendingAttackTimer) {
+            console.log('✅ All pending attacks processed, stopping processor');
+            clearInterval(this.pendingAttackTimer);
+            this.pendingAttackTimer = null;
         }
     }
     
     handleRemoteUnitDamage(data) {
-        const unit = this.engine.entities.find(e => e.id === data.targetId);
-        if (unit && unit.team !== this.playerTeam) {
-            // Apply damage without triggering another multiplayer event
-            unit.takeDamage(data.damage, true);
-            console.log(`Remote damage: ${unit.constructor.name} health updated to ${unit.health}`);
+        const target = this.engine.entities.find(e => e.id === data.targetId);
+        if (target && target.team === this.playerTeam) {
+            // Apply damage to our own unit from remote attacker
+            target.takeDamage(data.damage, true);
+            console.log(`Remote damage: ${target.constructor.name} took ${data.damage} damage from remote attacker`);
+        }
+    }
+    
+    handleRemoteTurretDamage(data) {
+        const target = this.engine.entities.find(e => e.id === data.targetId);
+        if (target && target.team === this.playerTeam) {
+            // Apply turret damage to our own unit/building from remote turret
+            target.takeDamage(data.damage, true);
+            console.log(`Remote turret damage: ${target.constructor.name} took ${data.damage} damage from remote turret`);
         }
     }
     
@@ -697,10 +847,21 @@ class Game {
     endGame(winner) {
         this.engine.pause();
         
-        // Cleanup multiplayer timer
+        // Cleanup multiplayer timers
         if (this.positionSyncTimer) {
             clearInterval(this.positionSyncTimer);
             this.positionSyncTimer = null;
+        }
+        
+        if (this.backgroundUpdateTimer) {
+            console.log('🛑 Stopping background multiplayer update timer...');
+            clearInterval(this.backgroundUpdateTimer);
+            this.backgroundUpdateTimer = null;
+        }
+        
+        if (this.pendingAttackTimer) {
+            clearInterval(this.pendingAttackTimer);
+            this.pendingAttackTimer = null;
         }
         
         // Cleanup building queue
@@ -862,7 +1023,8 @@ class Game {
         
         const cost = BuildingFactory.getBuildingCost(buildingType);
         
-        if (!this.resources.canAfford(cost.supplies, cost.power)) {
+        // Buildings don't consume population, only check supplies and power
+        if (this.resources.supplies < cost.supplies || this.resources.power < cost.power) {
             console.log(`Cannot afford ${buildingType}`);
             return;
         }

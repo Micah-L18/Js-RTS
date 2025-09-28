@@ -1,0 +1,8 @@
+ive also found another thing that when a user clicks away from tha game it stops updating events causing weird spawn points for troops that were spawned or moved while the user was clicked away 
+
+troop population needs to update immediatly 
+
+troop balancing 
+
+i want the tank to cost 500 supplies and to be 5x as strong defensivly , 5x as strong attacking but attack at 1/3 of the speed and move at 1/3 of the speed
+i want the worthog to cost 150 to be 3 times as fast 3 times as strong attcking wise but only 2 times as strong defensivly/

@@ -910,3 +910,92 @@ body {
     0%, 100% { opacity: 0; transform: translateX(100%); }
     15%, 85% { opacity: 1; transform: translateX(0); }
 }
+
+/* Leave Game Modal */
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.8);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 2000;
+}
+
+.leave-modal {
+    background: #2a2a2a;
+    border: 2px solid #444;
+    border-radius: 12px;
+    padding: 0;
+    width: 400px;
+    max-width: 90vw;
+    text-align: center;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+}
+
+.leave-modal .modal-header {
+    background: #1a1a1a;
+    padding: 20px;
+    border-radius: 10px 10px 0 0;
+    border-bottom: 1px solid #444;
+}
+
+.leave-modal .modal-header h3 {
+    margin: 0;
+    color: #ff6b6b;
+    font-size: 20px;
+    font-weight: bold;
+}
+
+.leave-modal .modal-body {
+    padding: 20px;
+    color: #ccc;
+}
+
+.leave-modal .modal-body p {
+    margin: 10px 0;
+    line-height: 1.4;
+}
+
+.modal-actions {
+    padding: 20px;
+    display: flex;
+    gap: 15px;
+    justify-content: center;
+}
+
+.leave-btn {
+    padding: 12px 24px;
+    border: none;
+    border-radius: 8px;
+    font-size: 16px;
+    font-weight: bold;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    min-width: 120px;
+}
+
+.leave-btn.danger {
+    background: linear-gradient(135deg, #ff4757, #ff3838);
+    color: white;
+}
+
+.leave-btn.danger:hover {
+    background: linear-gradient(135deg, #ff6b83, #ff5757);
+    transform: scale(1.02);
+}
+
+.leave-btn.secondary {
+    background: #444;
+    color: #ccc;
+    border: 1px solid #666;
+}
+
+.leave-btn.secondary:hover {
+    background: #555;
+    color: white;
+    transform: scale(1.02);
+}

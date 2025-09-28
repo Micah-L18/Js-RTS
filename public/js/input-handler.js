@@ -334,10 +334,14 @@ class InputHandler {
                 this.engine.pause();
                 break;
             case 'deselect':
-                // Exit building placement mode if active
-                if (this.game && this.game.buildMode === 'building') {
+                // In multiplayer game, show leave game modal on Escape
+                if (this.game && this.game.isMultiplayer && this.game.gameStarted) {
+                    this.showLeaveGameModal();
+                } else if (this.game && this.game.buildMode === 'building') {
+                    // Exit building placement mode if active
                     this.game.exitBuildingPlacement();
                 } else {
+                    // Normal deselect behavior
                     this.engine.clearSelection();
                     this.clearUnitSelection();
                 }
@@ -662,5 +666,62 @@ class InputHandler {
                 ctx.restore();
             }
         });
+    }
+    
+    showLeaveGameModal() {
+        const modal = document.getElementById('leaveGameModal');
+        if (modal) {
+            modal.style.display = 'flex';
+            
+            // Add event listeners for modal buttons
+            const confirmBtn = document.getElementById('confirmLeaveBtn');
+            const cancelBtn = document.getElementById('cancelLeaveBtn');
+            
+            const handleConfirm = () => {
+                this.leaveGame();
+                this.hideLeaveGameModal();
+                confirmBtn.removeEventListener('click', handleConfirm);
+                cancelBtn.removeEventListener('click', handleCancel);
+            };
+            
+            const handleCancel = () => {
+                this.hideLeaveGameModal();
+                confirmBtn.removeEventListener('click', handleConfirm);
+                cancelBtn.removeEventListener('click', handleCancel);
+            };
+            
+            confirmBtn.addEventListener('click', handleConfirm);
+            cancelBtn.addEventListener('click', handleCancel);
+            
+            // Also close modal if clicking on overlay
+            const handleOverlayClick = (e) => {
+                if (e.target === modal) {
+                    this.hideLeaveGameModal();
+                    modal.removeEventListener('click', handleOverlayClick);
+                    confirmBtn.removeEventListener('click', handleConfirm);
+                    cancelBtn.removeEventListener('click', handleCancel);
+                }
+            };
+            
+            modal.addEventListener('click', handleOverlayClick);
+        }
+    }
+    
+    hideLeaveGameModal() {
+        const modal = document.getElementById('leaveGameModal');
+        if (modal) {
+            modal.style.display = 'none';
+        }
+    }
+    
+    leaveGame() {
+        console.log('Player chose to leave the game');
+        
+        // Call the multiplayer manager's leave function
+        if (this.game && this.game.multiplayerManager) {
+            this.game.multiplayerManager.leaveRoom();
+        } else if (window.multiplayer) {
+            window.multiplayer.leaveRoom();
+        }
     }
 }

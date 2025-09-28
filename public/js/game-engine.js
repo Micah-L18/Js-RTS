@@ -369,8 +369,11 @@ class GameEngine {
     }
     
     addEntity(entity) {
+        // Only generate ID if entity doesn't already have one (for multiplayer sync)
+        if (!entity.id) {
+            entity.id = this.generateEntityId();
+        }
         this.entities.push(entity);
-        entity.id = this.generateEntityId();
     }
     
     addBullet(bullet) {

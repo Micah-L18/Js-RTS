@@ -2,11 +2,16 @@ const express = require('express');
 const http = require('http');
 const socketIo = require('socket.io');
 const path = require('path');
+const fs = require('fs');
+const GameLogger = require('./logger');
 
 const app = express();
 const server = http.createServer(app);
 const io = socketIo(server);
 const PORT = 3117;
+
+// Initialize game logger
+const logger = new GameLogger();
 
 // Game rooms storage
 const gameRooms = new Map();
@@ -44,9 +49,55 @@ app.get('/api/gamestate', (req, res) => {
     });
 });
 
+// API endpoint to view recent logs
+app.get('/api/logs', (req, res) => {
+    const lines = parseInt(req.query.lines) || 100;
+    const type = req.query.type; // Filter by log type if specified
+    
+    try {
+        const logs = logger.getRecentLogs(lines, type);
+        res.json({
+            success: true,
+            logs: logs,
+            totalLines: logs.length,
+            sessionId: logger.sessionId,
+            timestamp: new Date().toISOString()
+        });
+    } catch (error) {
+        logger.logError('log_api_error', error);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to retrieve logs',
+            timestamp: new Date().toISOString()
+        });
+    }
+});
+
+// API endpoint to download current log file
+app.get('/api/logs/download', (req, res) => {
+    try {
+        const logFilePath = logger.getCurrentLogFile();
+        if (fs.existsSync(logFilePath)) {
+            res.download(logFilePath, path.basename(logFilePath));
+        } else {
+            res.status(404).json({
+                success: false,
+                error: 'Log file not found'
+            });
+        }
+    } catch (error) {
+        logger.logError('log_download_error', error);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to download log file'
+        });
+    }
+});
+
 // Socket.IO connection handling
 io.on('connection', (socket) => {
     console.log(`Player connected: ${socket.id}`);
+    logger.logMultiplayer('PLAYER_CONNECT', 'N/A', { playerId: socket.id });
     
     // Send current lobby count to new connection
     const availableLobbies = getAvailableLobbiesCount();
@@ -61,6 +112,12 @@ io.on('connection', (socket) => {
             gameStarted: false,
             createdAt: Date.now()
         };
+        
+        logger.logMultiplayer('ROOM_CREATE', roomCode, { 
+            createdBy: socket.id, 
+            nickname: data.nickname,
+            roomData: room
+        });
         
         gameRooms.set(roomCode, room);
         socket.join(roomCode);
@@ -115,6 +172,13 @@ io.on('connection', (socket) => {
         });
         
         console.log(`Player ${data.nickname} (${socket.id}) joined room ${data.roomCode}`);
+        
+        logger.logMultiplayer('ROOM_JOIN', data.roomCode, {
+            playerId: socket.id,
+            nickname: data.nickname,
+            roomPlayers: room.players.length,
+            canStart: room.players.length === 2
+        });
         
         // Broadcast updated lobby count (room no longer available for quick game)
         broadcastLobbyCount();
@@ -247,12 +311,27 @@ io.on('connection', (socket) => {
             room.gameStarted = true;
             io.to(socket.currentRoom).emit('gameStarted');
             console.log(`Game started in room ${socket.currentRoom}`);
+            
+            logger.logGameState('GAME_STARTED', {
+                roomCode: socket.currentRoom,
+                players: room.players.map(p => ({ id: p.id, nickname: p.nickname, team: p.team })),
+                startTime: Date.now()
+            });
+            
+            // Broadcast updated lobby count (room no longer available)
+            broadcastLobbyCount();
         }
     });
     
     // Handle game actions
     socket.on('gameAction', (data) => {
         if (socket.currentRoom) {
+            logger.logPlayerAction(data.type || 'unknown_action', {
+                playerId: socket.id,
+                roomCode: socket.currentRoom,
+                actionData: data
+            });
+            
             socket.to(socket.currentRoom).emit('gameAction', {
                 ...data,
                 playerId: socket.id
@@ -271,6 +350,19 @@ io.on('connection', (socket) => {
                 if (winnerPlayer) {
                     winnerNickname = winnerPlayer.nickname;
                 }
+                
+                logger.logGameState('game_over', {
+                    roomCode: socket.currentRoom,
+                    winner: data.winner,
+                    winnerNickname: winnerNickname,
+                    reason: data.reason || 'normal_victory',
+                    gameData: data,
+                    players: room.players.map(p => ({
+                        id: p.id,
+                        nickname: p.nickname,
+                        team: p.team
+                    }))
+                });
             }
             
             io.to(socket.currentRoom).emit('gameOver', {
@@ -282,12 +374,14 @@ io.on('connection', (socket) => {
             // Clean up room after game over
             setTimeout(() => {
                 gameRooms.delete(socket.currentRoom);
+                logger.logEvent('room_cleanup', `Room ${socket.currentRoom} deleted after game over`);
             }, 30000); // Delete room after 30 seconds
         }
     });
     
     // Handle disconnection
     socket.on('disconnect', () => {
+        logger.logEvent('player_disconnect', `Player disconnected: ${socket.id}`);
         console.log(`Player disconnected: ${socket.id}`);
         
         if (socket.currentRoom) {
@@ -296,6 +390,13 @@ io.on('connection', (socket) => {
                 const player = room.players.find(p => p.id === socket.id);
                 
                 if (player) {
+                    logger.logMultiplayer('disconnect_handling', {
+                        playerId: socket.id,
+                        nickname: player.nickname,
+                        roomCode: socket.currentRoom,
+                        gameStarted: room.gameStarted
+                    });
+                    
                     if (room.gameStarted) {
                         // Game is in progress - start 5-minute timeout
                         player.disconnected = true;
@@ -305,6 +406,15 @@ io.on('connection', (socket) => {
                             // 5 minutes passed - declare other player winner
                             const remainingPlayer = room.players.find(p => p.id !== socket.id && !p.disconnected);
                             if (remainingPlayer) {
+                                logger.logGameState('game_timeout_win', {
+                                    winnerPlayerId: remainingPlayer.id,
+                                    winnerNickname: remainingPlayer.nickname,
+                                    loserPlayerId: socket.id,
+                                    loserNickname: player.nickname,
+                                    roomCode: socket.currentRoom,
+                                    reason: 'disconnect_timeout'
+                                });
+                                
                                 console.log(`Player ${player.nickname} timed out. Declaring ${remainingPlayer.nickname} winner.`);
                                 
                                 io.to(socket.currentRoom).emit('gameOver', {
@@ -316,6 +426,7 @@ io.on('connection', (socket) => {
                             
                             // Clean up room
                             gameRooms.delete(socket.currentRoom);
+                            logger.logEvent('room_deleted_timeout', `Room ${socket.currentRoom} deleted (timeout)`);
                             console.log(`Room ${socket.currentRoom} deleted (timeout)`);
                         }, 5 * 60 * 1000); // 5 minutes
                         
@@ -330,8 +441,16 @@ io.on('connection', (socket) => {
                         // Game not started - remove player immediately
                         room.players = room.players.filter(p => p.id !== socket.id);
                         
+                        logger.logMultiplayer('player_removed_lobby', {
+                            playerId: socket.id,
+                            nickname: player.nickname,
+                            roomCode: socket.currentRoom,
+                            remainingPlayers: room.players.length
+                        });
+                        
                         if (room.players.length === 0) {
                             gameRooms.delete(socket.currentRoom);
+                            logger.logEvent('room_deleted_empty', `Room ${socket.currentRoom} deleted (empty)`);
                             console.log(`Room ${socket.currentRoom} deleted (empty)`);
                         } else {
                             // Notify remaining player
@@ -340,6 +459,69 @@ io.on('connection', (socket) => {
                     }
                 }
             }
+        }
+    });
+    
+    // Handle client-side logs
+    socket.on('clientLog', (logEntry) => {
+        try {
+            const { type, data } = logEntry;
+            
+            switch (type) {
+                case 'client_console':
+                    logger.logEvent('CLIENT_CONSOLE', data.level.toUpperCase(), data.message, {
+                        sessionId: data.sessionId,
+                        url: data.url,
+                        userAgent: data.userAgent,
+                        playerId: socket.id
+                    });
+                    break;
+                    
+                case 'client_event':
+                    logger.logEvent('CLIENT_EVENT', data.category, `${data.action}: ${data.description}`, {
+                        ...data.data,
+                        sessionId: data.sessionId,
+                        playerId: socket.id
+                    });
+                    break;
+                    
+                case 'client_game_action':
+                    logger.logPlayerAction(`client_${data.actionType}`, {
+                        playerId: socket.id,
+                        sessionId: data.sessionId,
+                        actionData: data.actionData
+                    });
+                    break;
+                    
+                case 'client_error':
+                    logger.logError(`client_${data.errorType}`, {
+                        playerId: socket.id,
+                        sessionId: data.sessionId,
+                        errorData: data.errorData
+                    });
+                    break;
+                    
+                case 'client_performance':
+                    logger.logEvent('CLIENT_PERFORMANCE', data.metric, `Performance metric: ${data.value}`, {
+                        playerId: socket.id,
+                        sessionId: data.sessionId,
+                        value: data.value,
+                        context: data.context
+                    });
+                    break;
+                    
+                default:
+                    logger.logEvent('CLIENT_LOG', 'UNKNOWN', `Unknown client log type: ${type}`, {
+                        playerId: socket.id,
+                        logEntry
+                    });
+            }
+        } catch (error) {
+            logger.logError('client_log_processing_error', {
+                playerId: socket.id,
+                error: error.message,
+                logEntry
+            });
         }
     });
 });
