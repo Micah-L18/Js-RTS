@@ -29,6 +29,9 @@ class InputHandler {
             'KeyF': 'focus'
         };
         
+        // Attack-move state
+        this.isAttackMoveMode = false;
+        
         // Camera controls
         this.cameraSpeed = 300;
         this.edgeScrollMargin = 50;
@@ -92,6 +95,7 @@ class InputHandler {
         this.updateKeyboardInput(deltaTime);
         this.updateEdgeScrolling(deltaTime);
         this.updateMovementTargets();
+        this.updateAttackMoveTargets();
         this.updateAttackFeedbacks();
     }
     
@@ -307,15 +311,17 @@ class InputHandler {
         // Command selected units
         if (this.engine.selectedEntities.length > 0) {
             const targetEntity = this.getEntityAtPosition(this.worldMousePos);
+            const isAttackMove = this.keys['KeyA']; // Check if A key is held
             
             if (targetEntity && this.isEnemyEntity(targetEntity) && !targetEntity.isDead) {
                 // Attack command - can attack both units and buildings
                 this.commandSelectedUnits('attack', targetEntity);
                 console.log(`Attack command issued on ${targetEntity.constructor.name}`);
             } else {
-                // Move command
-                this.commandSelectedUnits('move', this.worldMousePos);
-                console.log(`Move command issued to (${this.worldMousePos.x.toFixed(1)}, ${this.worldMousePos.y.toFixed(1)}) at zoom ${this.engine.camera.zoom.toFixed(2)}`);
+                // Move or attack-move command
+                const command = isAttackMove ? 'attack-move' : 'move';
+                this.commandSelectedUnits(command, this.worldMousePos);
+                console.log(`${command} command issued to (${this.worldMousePos.x.toFixed(1)}, ${this.worldMousePos.y.toFixed(1)})`);
             }
         }
     }
@@ -465,6 +471,28 @@ class InputHandler {
                     }
                 });
                 break;
+            case 'attack-move':
+                // Calculate formation positions for attack-move
+                const attackMovePositions = this.calculateFormationPositions(playerUnits, target);
+                
+                // Add attack-move target indicator (different visual)
+                this.addAttackMoveTarget(target);
+                
+                // Issue attack-move commands
+                playerUnits.forEach((unit, index) => {
+                    const unitDestination = attackMovePositions[index];
+                    unit.attackMoveTo(unitDestination);
+                    
+                    // Send multiplayer action
+                    if (this.game && this.game.isMultiplayer) {
+                        this.game.sendMultiplayerAction('attackMove', {
+                            unitId: unit.id,
+                            destination: { x: unitDestination.x, y: unitDestination.y },
+                            team: unit.team
+                        });
+                    }
+                });
+                break;
             case 'attack':
                 // Add visual feedback for attack command
                 this.addAttackFeedback(target);
@@ -528,9 +556,29 @@ class InputHandler {
         });
     }
     
+    addAttackMoveTarget(position) {
+        if (!this.attackMoveTargets) {
+            this.attackMoveTargets = [];
+        }
+        
+        this.attackMoveTargets.push({
+            position: position.clone(),
+            timestamp: Date.now()
+        });
+    }
+    
     updateMovementTargets() {
         const currentTime = Date.now();
         this.movementTargets = this.movementTargets.filter(target => 
+            currentTime - target.timestamp < this.movementIndicatorDuration
+        );
+    }
+    
+    updateAttackMoveTargets() {
+        if (!this.attackMoveTargets) return;
+        
+        const currentTime = Date.now();
+        this.attackMoveTargets = this.attackMoveTargets.filter(target => 
             currentTime - target.timestamp < this.movementIndicatorDuration
         );
     }
@@ -636,6 +684,9 @@ class InputHandler {
         // Render movement target indicators
         this.renderMovementTargets(ctx);
         
+        // Render attack-move target indicators
+        this.renderAttackMoveTargets(ctx);
+        
         // Render attack feedback indicators
         this.renderAttackFeedbacks(ctx);
         
@@ -706,6 +757,56 @@ class InputHandler {
                     ctx.lineTo(arrowX - Math.cos(angle - 0.5) * arrowLength * 0.6, arrowY - Math.sin(angle - 0.5) * arrowLength * 0.6);
                     ctx.stroke();
                 }
+                
+                ctx.restore();
+            }
+        });
+    }
+    
+    renderAttackMoveTargets(ctx) {
+        if (!this.attackMoveTargets) return;
+        
+        const currentTime = Date.now();
+        
+        this.attackMoveTargets.forEach(target => {
+            const age = currentTime - target.timestamp;
+            const maxAge = this.movementIndicatorDuration;
+            const alpha = Math.max(0, 1 - (age / maxAge));
+            
+            if (alpha > 0) {
+                ctx.save();
+                
+                // Convert world position to screen position
+                const screenPos = this.engine.worldToScreen(target.position.x, target.position.y);
+                ctx.translate(screenPos.x, screenPos.y);
+                
+                // Draw pulsating red crosshair for attack-move
+                const pulseScale = 1 + Math.sin(age * 0.01) * 0.2;
+                ctx.scale(pulseScale, pulseScale);
+                
+                // Draw crosshair with targeting lines
+                ctx.strokeStyle = `rgba(255, 64, 64, ${alpha})`;
+                ctx.lineWidth = 3;
+                ctx.beginPath();
+                
+                // Horizontal line
+                ctx.moveTo(-15, 0);
+                ctx.lineTo(15, 0);
+                
+                // Vertical line
+                ctx.moveTo(0, -15);
+                ctx.lineTo(0, 15);
+                
+                ctx.stroke();
+                
+                // Draw outer attack circle
+                ctx.strokeStyle = `rgba(255, 128, 128, ${alpha * 0.5})`;
+                ctx.lineWidth = 2;
+                ctx.setLineDash([4, 4]);
+                ctx.beginPath();
+                ctx.arc(0, 0, 25, 0, Math.PI * 2);
+                ctx.stroke();
+                ctx.setLineDash([]);
                 
                 ctx.restore();
             }

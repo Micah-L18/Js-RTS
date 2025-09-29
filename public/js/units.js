@@ -17,25 +17,35 @@ class Unit {
         this.isDead = false;
         
         // Movement properties
-        this.maxSpeed = 50;
-        this.acceleration = 200;
-        this.friction = 0.8;
+        this.maxSpeed = 4.5; // Increased base speed for all units
+        this.acceleration = 25; // Increased base acceleration
+        this.friction = 0.85; // Higher friction to slow down faster
         this.rotationSpeed = 3;
         this.rotation = 0;
         
         // Combat properties
         this.damage = 20;
-        this.attackRange = 80;
+        this.attackRange = 240; // Increased from 80 to 240 (3x range)
         this.attackCooldown = 1000; // milliseconds
         this.lastAttackTime = 0;
         this.attackTarget = null;
+        
+        // Attack-move properties
+        this.isAttackMoving = false;
+        this.attackMoveDestination = null;
+        this.engagementRange = 240; // Range to detect enemies during attack-move
+        
+        // Death animation properties
+        this.deathAnimationTime = 1000; // 1 second death animation
+        this.deathStartTime = 0;
+        this.deathRotationSpeed = 0;
         
         // Visual properties
         this.color = team === 'player' ? '#0066cc' : '#cc3333';
         this.size = 20;
         
         // State
-        this.state = 'idle'; // idle, moving, attacking, dead
+        this.state = 'idle'; // idle, moving, attacking, attack-moving, dead, dying
         this.selected = false;
         this.savedDestination = null; // Remember destination when interrupted by attack
         
@@ -57,72 +67,43 @@ class Unit {
             case 'attacking':
                 this.updateAttack(deltaTime);
                 break;
+            case 'attack-moving':
+                this.updateAttackMove(deltaTime);
+                break;
+            case 'dying':
+                this.updateDeathAnimation(deltaTime);
+                break;
             case 'idle':
                 this.updateIdle(deltaTime);
                 break;
         }
         
-        // Check for death
-        if (this.health <= 0) {
-            this.die();
-        }
-        
-        // Update position with collision detection
-        const newPosition = this.position.add(this.velocity.multiply(deltaTime / 1000));
-        
-        // Check for collision with buildings
-        if (window.game && window.game.engine) {
-            let collisionDetected = false;
-            
-            const buildings = window.game.engine.entities.filter(entity => entity instanceof Building && !entity.isDead);
-            
-            for (const building of buildings) {
-                // Calculate collision boundaries (building bounds + unit radius)
-                const minX = building.position.x - building.width/2 - this.radius;
-                const maxX = building.position.x + building.width/2 + this.radius;
-                const minY = building.position.y - building.height/2 - this.radius;
-                const maxY = building.position.y + building.height/2 + this.radius;
+        // Only check attack target validity if we actually have one
+        if (this.attackTarget) {
+            // Check if target is still valid
+            if (this.attackTarget.isDead) {
+                this.attackTarget = null;
                 
-                // Check if new position would collide
-                if (newPosition.x >= minX && newPosition.x <= maxX && 
-                    newPosition.y >= minY && newPosition.y <= maxY) {
-                    collisionDetected = true;
-                    
-                    // Simple avoidance: move away from building center
-                    const buildingCenter = building.position;
-                    const awayFromBuilding = this.position.subtract(buildingCenter).normalize();
-                    
-                    // If we have a destination, blend the avoidance with movement toward destination
-                    if (this.destination) {
-                        const toDestination = this.destination.subtract(this.position).normalize();
-                        // Average the two directions
-                        const blendedDirection = awayFromBuilding.add(toDestination).normalize();
-                        this.velocity = blendedDirection.multiply(this.maxSpeed * 0.6);
+                // Resume saved destination (could be movement or attack-move)
+                if (this.savedDestination) {
+                    if (this.isAttackMoving) {
+                        // Resume attack-move
+                        this.attackMoveDestination = this.savedDestination;
+                        this.savedDestination = null;
+                        this.state = 'attack-moving';
+                        console.log(`${this.constructor.name} resuming attack-move to saved destination`);
                     } else {
-                        // Just move away from building
-                        this.velocity = awayFromBuilding.multiply(this.maxSpeed * 0.5);
+                        // Resume normal movement
+                        this.destination = this.savedDestination;
+                        this.savedDestination = null;
+                        this.state = 'moving';
+                        console.log(`${this.constructor.name} resuming movement to saved destination`);
                     }
-                    break;
+                } else {
+                    this.state = 'idle';
                 }
             }
-            
-            // Only update position if no collision
-            if (!collisionDetected) {
-                this.position = newPosition;
-            } else {
-                // Still move slightly to avoid getting stuck
-                this.position = this.position.add(this.velocity.multiply(deltaTime / 2000));
-            }
-            
-            // Keep unit within world bounds
-            this.position.x = MathUtils.clamp(this.position.x, this.radius, window.game.engine.worldWidth - this.radius);
-            this.position.y = MathUtils.clamp(this.position.y, this.radius, window.game.engine.worldHeight - this.radius);
-        } else {
-            this.position = newPosition;
         }
-        
-        // Apply friction
-        this.velocity = this.velocity.multiply(Math.pow(this.friction, deltaTime / 16));
     }
     
     updateMovement(deltaTime) {
@@ -184,15 +165,65 @@ class Unit {
         
         this.velocity = this.velocity.add(acceleration.multiply(deltaTime / 1000));
         
-        // Limit velocity
+        // Limit velocity to max speed FIRST
         if (this.velocity.length() > this.maxSpeed) {
             this.velocity = this.velocity.normalize().multiply(this.maxSpeed);
         }
         
+        // Apply light friction to prevent sliding (but only when not actively accelerating toward destination)
+        const distanceToDestination = this.position.distance(this.destination);
+        if (distanceToDestination < 20) {
+            // Apply more friction when close to destination to help stop
+            this.velocity = this.velocity.multiply(0.8);
+        } else {
+            // Apply minimal friction during normal movement
+            this.velocity = this.velocity.multiply(0.98);
+        }
+        
         // Update rotation to face movement direction
-        if (this.velocity.length() > 1) {
+        if (this.velocity.length() > 0.1) {
             this.rotation = Math.atan2(this.velocity.y, this.velocity.x);
         }
+        
+        // Actually update the position based on velocity
+        const newPosition = this.position.add(this.velocity.multiply(deltaTime / 1000));
+        
+        // Improved collision detection and avoidance
+        const nearbyBuildings = window.game.engine.getEntitiesNear(newPosition, this.radius + 35)
+            .filter(entity => entity instanceof Building && entity !== this);
+        
+        let finalPosition = newPosition;
+        
+        // If collision detected, try to find a path around the building
+        if (nearbyBuildings.length > 0) {
+            const building = nearbyBuildings[0];
+            const toBuildingVector = building.position.subtract(this.position);
+            const distance = toBuildingVector.length();
+            
+            // If too close to building, try to move away or around it
+            const buildingRadius = Math.max(building.width, building.height) / 2; // Use building dimensions
+            const collisionBuffer = 25; // Larger buffer to match visual boundaries
+            if (distance < this.radius + buildingRadius + collisionBuffer) {
+                // Calculate a perpendicular direction to go around the building
+                const perpendicular = new Vector2(-toBuildingVector.y, toBuildingVector.x).normalize();
+                const avoidanceForce = perpendicular.multiply(this.maxSpeed * 0.5);
+                
+                // Apply avoidance force but also try to continue toward destination
+                const avoidancePosition = this.position.add(avoidanceForce.multiply(deltaTime / 1000));
+                finalPosition = avoidancePosition;
+                
+                // Reduce velocity when avoiding obstacles
+                this.velocity = this.velocity.multiply(0.7);
+            } else {
+                finalPosition = newPosition;
+            }
+        }
+        
+        // Clamp position to world bounds
+        this.position = new Vector2(
+            MathUtils.clamp(finalPosition.x, this.radius, window.game.engine.worldWidth - this.radius),
+            MathUtils.clamp(finalPosition.y, this.radius, window.game.engine.worldHeight - this.radius)
+        );
     }
     
     updateAttack(deltaTime) {
@@ -275,13 +306,113 @@ class Unit {
         }
     }
     
+    updateAttackMove(deltaTime) {
+        // Check for enemies within engagement range
+        if (this.canAttack() && window.game && window.game.engine) {
+            const nearbyEnemies = window.game.engine.getEntitiesNear(this.position, this.engagementRange)
+                .filter(entity => 
+                    (entity instanceof Unit || entity instanceof Building) && 
+                    entity.team !== this.team && 
+                    !entity.isDead
+                );
+            
+            if (nearbyEnemies.length > 0) {
+                // Prioritize closest enemy
+                const closestEnemy = nearbyEnemies.reduce((closest, enemy) => {
+                    const distToEnemy = this.position.distance(enemy.position);
+                    const distToClosest = this.position.distance(closest.position);
+                    return distToEnemy < distToClosest ? enemy : closest;
+                });
+                
+                // Save current destination and switch to attack
+                this.savedDestination = this.attackMoveDestination;
+                this.attackTarget = closestEnemy;
+                this.state = 'attacking';
+                
+                // Send multiplayer action
+                if (window.game && window.game.isMultiplayer) {
+                    window.game.sendMultiplayerAction('attack', {
+                        attackerId: this.id,
+                        targetId: closestEnemy.id,
+                        team: this.team
+                    });
+                }
+                
+                console.log(`${this.constructor.name} engaging enemy during attack-move: ${closestEnemy.constructor.name}`);
+                return;
+            }
+        }
+        
+        // Continue moving toward destination if no enemies found
+        if (this.attackMoveDestination) {
+            const distance = this.position.distance(this.attackMoveDestination);
+            
+            if (distance < 5) {
+                this.attackMoveDestination = null;
+                this.isAttackMoving = false;
+                this.state = 'idle';
+                this.velocity = new Vector2(0, 0);
+                return;
+            }
+            
+            // Move toward destination
+            const direction = this.attackMoveDestination.subtract(this.position).normalize();
+            const acceleration = direction.multiply(this.acceleration);
+            
+            this.velocity = this.velocity.add(acceleration.multiply(deltaTime / 1000));
+            
+            // Limit speed
+            if (this.velocity.magnitude() > this.maxSpeed) {
+                this.velocity = this.velocity.normalize().multiply(this.maxSpeed);
+            }
+            
+            // Update rotation to face movement direction
+            if (this.velocity.magnitude() > 0.1) {
+                this.rotation = Math.atan2(this.velocity.y, this.velocity.x);
+            }
+        }
+    }
+    
+    updateDeathAnimation(deltaTime) {
+        const currentTime = Date.now();
+        const animationProgress = (currentTime - this.deathStartTime) / this.deathAnimationTime;
+        
+        if (animationProgress >= 1) {
+            // Animation complete, mark as dead
+            this.isDead = true;
+            this.state = 'dead';
+            return;
+        }
+        
+        // Rotate the unit as it dies
+        this.deathRotationSpeed += deltaTime * 0.01; // Gradually increase rotation speed
+        this.rotation += this.deathRotationSpeed * deltaTime / 1000;
+        
+        // Scale down the unit
+        this.size = this.size * (1 - animationProgress * 0.5); // Shrink to 50% size
+    }
+    
     render(ctx, camera) {
-        if (this.isDead) return;
+        if (this.isDead && this.state !== 'dying') return;
         
         ctx.save();
         
-        // Draw unit body
-        ctx.translate(this.position.x, this.position.y);
+        // Apply death animation effects
+        if (this.state === 'dying') {
+            const currentTime = Date.now();
+            const animationProgress = (currentTime - this.deathStartTime) / this.deathAnimationTime;
+            
+            // Fade out the unit
+            ctx.globalAlpha = 1 - animationProgress;
+            
+            // Scale down the unit
+            const scale = 1 - (animationProgress * 0.5);
+            ctx.translate(this.position.x, this.position.y);
+            ctx.scale(scale, scale);
+        } else {
+            ctx.translate(this.position.x, this.position.y);
+        }
+        
         ctx.rotate(this.rotation);
         
         // Unit body
@@ -345,9 +476,33 @@ class Unit {
             MathUtils.clamp(destination.y, this.radius, window.game.engine.worldHeight - this.radius)
         );
         
+        // Interrupt any current action and start new movement
         this.destination = clampedDestination;
         this.state = 'moving';
         this.attackTarget = null;
+        this.isAttackMoving = false;
+        this.attackMoveDestination = null;
+        this.savedDestination = null; // Clear any saved destination
+        
+        console.log(`${this.constructor.name} received new move command, interrupting current action`);
+    }
+    
+    attackMoveTo(destination) {
+        // Clamp destination to world bounds
+        const clampedDestination = new Vector2(
+            MathUtils.clamp(destination.x, this.radius, window.game.engine.worldWidth - this.radius),
+            MathUtils.clamp(destination.y, this.radius, window.game.engine.worldHeight - this.radius)
+        );
+        
+        // Interrupt any current action and start attack-move
+        this.attackMoveDestination = clampedDestination;
+        this.state = 'attack-moving';
+        this.isAttackMoving = true;
+        this.destination = null; // Clear regular movement destination
+        this.attackTarget = null; // Clear current attack target
+        this.savedDestination = null; // Clear any saved destination
+        
+        console.log(`${this.constructor.name} received new attack-move command, interrupting current action`);
     }
     
     attackUnit(target) {
@@ -379,13 +534,25 @@ class Unit {
         if (isMyUnit) {
             let damageToApply = this.damage;
             
+            // Calculate distance-based damage falloff
+            const distance = this.position.distance(target.position);
+            const optimalRange = this.attackRange * 0.3; // 30% of max range = full damage
+            const falloffRange = this.attackRange - optimalRange; // Remaining 70% = falloff zone
+            
+            if (distance > optimalRange) {
+                // Calculate falloff factor (1.0 at optimal range, 0.25 at max range)
+                const falloffProgress = (distance - optimalRange) / falloffRange;
+                const falloffFactor = Math.max(0.25, 1.0 - (falloffProgress * 0.75));
+                damageToApply = Math.floor(damageToApply * falloffFactor);
+            }
+            
             // Reduce damage against buildings for balance
             if (target instanceof Building) {
-                damageToApply = Math.floor(this.damage * 0.5); // 50% damage to buildings
+                damageToApply = Math.floor(damageToApply * 0.5); // 50% damage to buildings
             }
             
             target.takeDamage(damageToApply, false, this); // Pass the attacker for auto-defense
-            console.log(`${this.constructor.name} attacked ${target.constructor.name} for ${damageToApply} damage`);
+            console.log(`${this.constructor.name} attacked ${target.constructor.name} for ${damageToApply} damage (distance: ${distance.toFixed(1)})`);
             
             // Send damage event to other players
             if (isMultiplayer) {
@@ -429,6 +596,11 @@ class Unit {
         this.health = Math.max(0, this.health - amount);
         console.log(`${this.constructor.name} took ${amount} damage, health: ${this.health}/${this.maxHealth}`);
         
+        // Check if unit should die
+        if (this.health <= 0 && !this.isDead && this.state !== 'dying') {
+            this.die();
+        }
+        
         // Auto-defense: if we're idle and not dead, fight back!
         if (attacker && !this.isDead && this.state === 'idle' && this.canAttack()) {
             // Only auto-defend if the attacker is an enemy unit (not building)
@@ -454,19 +626,23 @@ class Unit {
     }
     
     die() {
-        this.isDead = true;
-        this.state = 'dead';
-        
-        console.log(`${this.constructor.name} has died`);
-        
-        // Update population count when unit dies
-        if (window.game && window.game.resourceManager) {
-            window.game.resourceManager.updatePopulation();
-        }
-        
-        // Remove from selection if selected
-        if (window.game && window.game.engine) {
-            window.game.engine.deselectEntity(this);
+        // Start death animation instead of immediately marking as dead
+        if (this.state !== 'dying') {
+            this.state = 'dying';
+            this.deathStartTime = Date.now();
+            this.deathRotationSpeed = Math.random() * 5 + 2; // Random rotation speed between 2-7
+            
+            console.log(`${this.constructor.name} is dying...`);
+            
+            // Update population count when unit starts dying
+            if (window.game && window.game.resourceManager) {
+                window.game.resourceManager.updatePopulation();
+            }
+            
+            // Remove from selection if selected
+            if (window.game && window.game.engine) {
+                window.game.engine.deselectEntity(this);
+            }
         }
     }
     
@@ -496,7 +672,8 @@ class Marine extends Unit {
         this.health = this.maxHealth;
         this.damage = 25;
         this.attackRange = 100;
-        this.maxSpeed = 80; // Medium speed - between Warthog and Scorpion
+        this.maxSpeed = 8.75; // 75% increase from 5.0 for infantry
+        this.acceleration = 52; // 75% increase from 30 for quicker response
         this.attackCooldown = 800;
         this.radius = 12;
         this.size = 18;
@@ -518,7 +695,8 @@ class Warthog extends Unit {
         this.health = this.maxHealth;
         this.damage = 45; // 3x attack damage (was 15)
         this.attackRange = 120;
-        this.maxSpeed = 360; // 3x faster (was 120)
+        this.maxSpeed = 13.1; // 75% increase from 7.5 for fast vehicles
+        this.acceleration = 70; // 75% increase from 40 for quick vehicle response
         this.attackCooldown = 600;
         this.radius = 20;
         this.size = 35;
@@ -583,7 +761,7 @@ class Scorpion extends Unit {
         this.health = this.maxHealth;
         this.damage = 300; // 5x attack damage (was 60)
         this.attackRange = 150;
-        this.maxSpeed = 13; // 1/3 movement speed (was 40)
+        this.maxSpeed = 9.5; // Reduced from 13 - slower heavy tank
         this.attackCooldown = 6000; // 1/3 attack speed - 3x slower (was 2000)
         this.radius = 25;
         this.size = 45;

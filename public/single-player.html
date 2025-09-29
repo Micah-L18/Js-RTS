@@ -473,8 +473,8 @@
                 gameEnded = true;
                 setTimeout(() => {
                     const difficultyText = selectedDifficulty === 'legendary' ? 'LEGENDARY MODE' : selectedDifficulty.toUpperCase();
-                    alert(`💀 DEFEAT! Your headquarters has been destroyed in ${difficultyText}!`);
-                    // Optionally restart or return to menu
+                    const message = `💀 DEFEAT! Your headquarters has been destroyed in ${difficultyText}!`;
+                    window.game.showGameOverModal(false, message);
                 }, 100);
             }
         }
@@ -517,7 +517,8 @@
             if (destroyedBasesCount >= expectedBases) {
                 gameEnded = true;
                 setTimeout(() => {
-                    alert('🏆 VICTORY! You destroyed all 9 enemy bases in legendary mode!');
+                    const message = `🏆 VICTORY! You destroyed all ${expectedBases} enemy bases in ${selectedDifficulty === 'legendary' ? 'LEGENDARY MODE' : selectedDifficulty.toUpperCase()}!`;
+                    window.game.showGameOverModal(true, message);
                 }, 100);
             }
         }
@@ -586,9 +587,9 @@
                     <h4>Game Controls</h4>
                     <div class="settings-info">
                         <p><strong>WASD / Arrow Keys:</strong> Move camera</p>
-                        <p><strong>Mouse Wheel:</strong> Zoom in/out</p>
                         <p><strong>Left Click:</strong> Select units/buildings</p>
                         <p><strong>Right Click:</strong> Move/Attack command</p>
+                        <p><strong>A + Right Click:</strong> Attack-Move command</p>
                         <p><strong>Ctrl + Click:</strong> Multi-select</p>
                         <p><strong>Space:</strong> Pause/Unpause game</p>
                         <p><strong>ESC:</strong> Deselect all</p>

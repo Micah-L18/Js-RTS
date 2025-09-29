@@ -521,6 +521,9 @@ class Game {
             case 'unitMove':
                 this.handleRemoteUnitMove(data);
                 break;
+            case 'attackMove':
+                this.handleRemoteAttackMove(data);
+                break;
             case 'buildingPlace':
                 this.handleRemoteBuildingPlace(data);
                 break;
@@ -586,6 +589,25 @@ class Game {
                 console.log(`Remote unit ${unit.id} moved to (${data.destination.x}, ${data.destination.y})`);
             } else {
                 console.log('Ignoring move for own unit');
+            }
+        } else {
+            console.log(`Unit with ID ${data.unitId} not found`);
+        }
+    }
+    
+    handleRemoteAttackMove(data) {
+        console.log('Remote attack-move data:', data);
+        const unit = this.engine.entities.find(e => e.id === data.unitId);
+        
+        if (unit) {
+            console.log(`Found unit: ${unit.constructor.name}, team: ${unit.team}, playerTeam: ${this.playerTeam}`);
+            if (unit.team !== this.playerTeam) {
+                // Create Vector2 object for destination
+                const destination = new Vector2(data.destination.x, data.destination.y);
+                unit.attackMoveTo(destination);
+                console.log(`Remote unit ${unit.id} attack-moved to (${data.destination.x}, ${data.destination.y})`);
+            } else {
+                console.log('Ignoring attack-move for own unit');
             }
         } else {
             console.log(`Unit with ID ${data.unitId} not found`);

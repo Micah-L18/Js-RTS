@@ -531,6 +531,15 @@ class GameEngine {
     
     selectEntity(entity) {
         if (!this.selectedEntities.includes(entity)) {
+            // If selecting a building, clear all previous selections first
+            if (entity instanceof Building) {
+                this.clearSelection();
+            }
+            // If selecting a unit and we have buildings selected, clear buildings first
+            else if (entity instanceof Unit && this.selectedEntities.some(e => e instanceof Building)) {
+                this.clearSelection();
+            }
+            
             this.selectedEntities.push(entity);
             this.updateCommandPanelVisibility();
         }

@@ -625,14 +625,14 @@ class Turret extends Building {
         
         // Combat properties - Rapid fire, low damage
         this.damage = 25; // Much lower damage per shot (was 75)
-        this.attackRange = 180; // Keep same range
+        this.attackRange = 240; // Increased range to match units (3x from original 80)
         this.attackCooldown = 150; // Much faster rate of fire (was 300ms)
         this.lastAttackTime = 0;
         this.attackTarget = null;
         
         // Turret specific properties
         this.rotation = 0; // Turret can rotate to face targets
-        this.detectionRange = 200; // Slightly longer than attack range
+        this.detectionRange = 260; // Slightly longer than attack range
         
         this.canProduce = []; // Turrets don't produce anything
     }
@@ -738,17 +738,22 @@ class Turret extends Building {
         // Create visual effects
         this.createAttackEffects(target);
         
+        // Calculate distance-based damage falloff
+        const distance = this.position.distance(target.position);
+        const falloffFactor = Math.max(0.3, 1.0 - (distance / this.attackRange) * 0.7); // 30% min damage, 100% max at close range
+        const finalDamage = Math.round(this.damage * falloffFactor);
+        
         // Turrets always apply damage in multiplayer (unlike units which need ownership authority)
         // This ensures turrets can actually kill enemy troops as intended
-        target.takeDamage(this.damage, false, this); // Pass the turret as attacker
-        console.log(`${this.constructor.name} attacked ${target.constructor.name} for ${this.damage} damage`);
+        target.takeDamage(finalDamage, false, this); // Pass the turret as attacker
+        console.log(`${this.constructor.name} attacked ${target.constructor.name} for ${finalDamage} damage (${Math.round(falloffFactor * 100)}% of ${this.damage} base damage)`);
         
         // Send damage event to other players
         if (isMultiplayer) {
             window.game.sendMultiplayerAction('turretDamage', {
                 turretId: this.id,
                 targetId: target.id,
-                damage: this.damage,
+                damage: finalDamage,
                 targetTeam: target.team,
                 timestamp: Date.now()
             });
