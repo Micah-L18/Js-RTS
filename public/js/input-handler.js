@@ -76,7 +76,6 @@ class InputHandler {
         this.canvas.addEventListener('mousedown', (e) => this.onMouseDown(e));
         this.canvas.addEventListener('mousemove', (e) => this.onMouseMove(e));
         this.canvas.addEventListener('mouseup', (e) => this.onMouseUp(e));
-        this.canvas.addEventListener('wheel', (e) => this.onWheel(e));
         this.canvas.addEventListener('contextmenu', (e) => e.preventDefault());
         
         // Keyboard events
@@ -138,7 +137,7 @@ class InputHandler {
         e.preventDefault();
         
         this.updateMousePosition(e);
-        this.updateWorldMousePosition(); // Update world coordinates with zoom
+        this.updateWorldMousePosition(); // Update world coordinates
         this.isMouseDown = true;
         this.dragStart = this.mousePos.clone();
         this.multiSelect = e.ctrlKey || e.shiftKey;
@@ -152,7 +151,7 @@ class InputHandler {
     
     onMouseMove(e) {
         this.updateMousePosition(e);
-        this.updateWorldMousePosition(); // Update world coordinates with current zoom
+        this.updateWorldMousePosition(); // Update world coordinates
         
         // Check for building hover and update cursor
         this.updateCursorForBuildingHover();
@@ -230,63 +229,6 @@ class InputHandler {
         this.isDragging = false;
         this.selectionBox = null;
         this.clickedOnEntity = false; // Reset the entity click flag
-    }
-    
-    onWheel(e) {
-        e.preventDefault();
-        
-        const zoomFactor = 1.1; // Multiplicative zoom factor
-        const zoomDirection = e.deltaY > 0 ? -1 : 1;
-        const oldZoom = this.engine.camera.zoom;
-        
-        // Get dynamic zoom limits based on map size and canvas size
-        const zoomLimits = this.engine.getZoomLimits();
-        
-        // Use multiplicative scaling for more natural feel
-        const newZoom = MathUtils.clamp(
-            zoomDirection > 0 ? oldZoom * zoomFactor : oldZoom / zoomFactor,
-            zoomLimits.min, zoomLimits.max
-        );
-        
-        if (Math.abs(oldZoom - newZoom) < 0.001) return; // No significant zoom change
-        
-        // Get world position under mouse before zoom
-        const mouseWorldPos = this.engine.screenToWorld(this.mousePos.x, this.mousePos.y);
-        
-        // Update zoom
-        this.engine.camera.zoom = newZoom;
-        
-        // Calculate where the mouse world position is now in screen coordinates
-        const newMouseScreenPos = this.engine.worldToScreen(mouseWorldPos.x, mouseWorldPos.y);
-        
-        // Adjust camera to keep the world point under the mouse cursor
-        const deltaX = (this.mousePos.x - newMouseScreenPos.x) / newZoom;
-        const deltaY = (this.mousePos.y - newMouseScreenPos.y) / newZoom;
-        
-        this.engine.camera.x += deltaX;
-        this.engine.camera.y += deltaY;
-        
-        // Clamp camera to keep it within world bounds
-        const viewWidth = this.engine.canvas.width / this.engine.camera.zoom;
-        const viewHeight = this.engine.canvas.height / this.engine.camera.zoom;
-        
-        // Camera position represents top-left of viewport
-        // Keep camera strictly within world bounds
-        const maxX = Math.max(0, this.engine.worldWidth - viewWidth);
-        const maxY = Math.max(0, this.engine.worldHeight - viewHeight);
-        const minX = 0;
-        const minY = 0;
-        
-        this.engine.camera.x = MathUtils.clamp(
-            this.engine.camera.x,
-            minX,
-            maxX
-        );
-        this.engine.camera.y = MathUtils.clamp(
-            this.engine.camera.y,
-            minY,
-            maxY
-        );
     }
     
     onKeyDown(e) {
@@ -415,12 +357,16 @@ class InputHandler {
     updateMousePosition(e) {
         const rect = this.canvas.getBoundingClientRect();
         
-        // Account for canvas scaling and device pixel ratio
-        const scaleX = this.canvas.width / rect.width;
-        const scaleY = this.canvas.height / rect.height;
+        // With device pixel ratio handling, we need to convert from CSS pixels to canvas pixels
+        const dpr = window.devicePixelRatio || 1;
         
-        this.mousePos.x = (e.clientX - rect.left) * scaleX;
-        this.mousePos.y = (e.clientY - rect.top) * scaleY;
+        // Get mouse position in CSS pixels
+        const cssX = e.clientX - rect.left;
+        const cssY = e.clientY - rect.top;
+        
+        // Convert to canvas pixels (accounting for device pixel ratio)
+        this.mousePos.x = cssX * dpr;
+        this.mousePos.y = cssY * dpr;
     }
     
     updateSelectionBox() {

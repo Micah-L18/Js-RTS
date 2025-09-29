@@ -74,9 +74,21 @@ class GameEngine {
     }
     
     resizeCanvas() {
-        this.canvas.width = window.innerWidth;
-        this.canvas.height = window.innerHeight;
-        console.log(`Canvas resized to: ${this.canvas.width}x${this.canvas.height}`);
+        // Get the device pixel ratio for high-DPI displays
+        const dpr = window.devicePixelRatio || 1;
+        
+        // Set the actual canvas size in memory (scaled for device pixel ratio)
+        this.canvas.width = window.innerWidth * dpr;
+        this.canvas.height = window.innerHeight * dpr;
+        
+        // Set the display size (CSS pixels)
+        this.canvas.style.width = window.innerWidth + 'px';
+        this.canvas.style.height = window.innerHeight + 'px';
+        
+        // Scale the context to match device pixel ratio
+        this.ctx.scale(dpr, dpr);
+        
+        console.log(`Canvas resized to: ${this.canvas.width}x${this.canvas.height} (DPR: ${dpr})`);
     }
     
     start() {
@@ -94,8 +106,12 @@ class GameEngine {
         console.log('Game stopped');
     }
     
-    pause() {
-        this.isPaused = !this.isPaused;
+    pause(shouldPause = null) {
+        if (shouldPause !== null) {
+            this.isPaused = shouldPause;
+        } else {
+            this.isPaused = !this.isPaused;
+        }
         console.log(`Game ${this.isPaused ? 'paused' : 'resumed'}`);
     }
     
@@ -227,9 +243,10 @@ class GameEngine {
         // Don't render grid if zoomed out too much (grid would be too dense)
         if (zoom < 0.2) return;
         
-        // Calculate visible world area
-        const viewWidth = this.canvas.width / zoom;
-        const viewHeight = this.canvas.height / zoom;
+        // Calculate visible world area (accounting for device pixel ratio)
+        const dpr = window.devicePixelRatio || 1;
+        const viewWidth = (this.canvas.width / dpr) / zoom;
+        const viewHeight = (this.canvas.height / dpr) / zoom;
         
         // Calculate which grid lines are visible
         // Start from the first grid line before the visible area
@@ -462,9 +479,11 @@ class GameEngine {
         });
         
         // Draw camera viewport rectangle on minimap
-        const viewportWorldWidth = this.canvas.width / this.camera.zoom;
-        const viewportWorldHeight = this.canvas.height / this.camera.zoom;
+        const dpr = window.devicePixelRatio || 1;
+        const viewportWorldWidth = (this.canvas.width / dpr) / this.camera.zoom;
+        const viewportWorldHeight = (this.canvas.height / dpr) / this.camera.zoom;
         
+        // Camera position represents top-left, but minimap should show the viewport correctly
         minimapCtx.strokeStyle = '#fff';
         minimapCtx.lineWidth = 1;
         minimapCtx.strokeRect(
@@ -473,6 +492,13 @@ class GameEngine {
             viewportWorldWidth * scaleX,
             viewportWorldHeight * scaleY
         );
+        
+        // Draw camera center point for reference
+        const cameraCenterX = (this.camera.x + viewportWorldWidth / 2) * scaleX;
+        const cameraCenterY = (this.camera.y + viewportWorldHeight / 2) * scaleY;
+        
+        minimapCtx.fillStyle = '#fff';
+        minimapCtx.fillRect(cameraCenterX - 1, cameraCenterY - 1, 2, 2);
     }
     
     addEntity(entity) {
@@ -548,8 +574,9 @@ class GameEngine {
         const newY = this.camera.y + dy;
         
         // Calculate bounds for current zoom level
-        const viewWidth = this.canvas.width / this.camera.zoom;
-        const viewHeight = this.canvas.height / this.camera.zoom;
+        const dpr = window.devicePixelRatio || 1;
+        const viewWidth = (this.canvas.width / dpr) / this.camera.zoom;
+        const viewHeight = (this.canvas.height / dpr) / this.camera.zoom;
         
         // Camera position represents top-left of viewport
         // Keep camera strictly within world bounds
@@ -563,8 +590,9 @@ class GameEngine {
     }
     
     setCameraPosition(x, y) {
-        const viewWidth = this.canvas.width / this.camera.zoom;
-        const viewHeight = this.canvas.height / this.camera.zoom;
+        const dpr = window.devicePixelRatio || 1;
+        const viewWidth = (this.canvas.width / dpr) / this.camera.zoom;
+        const viewHeight = (this.canvas.height / dpr) / this.camera.zoom;
         
         // Camera position represents top-left of viewport
         // Keep camera strictly within world bounds
@@ -586,16 +614,20 @@ class GameEngine {
     }
     
     screenToWorld(screenX, screenY) {
+        // Account for device pixel ratio in coordinate conversion
+        const dpr = window.devicePixelRatio || 1;
         return new Vector2(
-            screenX / this.camera.zoom + this.camera.x,
-            screenY / this.camera.zoom + this.camera.y
+            (screenX / dpr) / this.camera.zoom + this.camera.x,
+            (screenY / dpr) / this.camera.zoom + this.camera.y
         );
     }
     
     worldToScreen(worldX, worldY) {
+        // Account for device pixel ratio in coordinate conversion
+        const dpr = window.devicePixelRatio || 1;
         return new Vector2(
-            (worldX - this.camera.x) * this.camera.zoom,
-            (worldY - this.camera.y) * this.camera.zoom
+            ((worldX - this.camera.x) * this.camera.zoom) * dpr,
+            ((worldY - this.camera.y) * this.camera.zoom) * dpr
         );
     }
     
@@ -627,20 +659,5 @@ class GameEngine {
             if (!entity.position) return false;
             return entity.position.distance(position) <= radius;
         });
-    }
-
-    getZoomLimits() {
-        // Calculate minimum zoom to fit entire world in viewport
-        // We need the zoom value that hits the border first (most restrictive)
-        const zoomToFitWidth = this.canvas.width / this.worldWidth;
-        const zoomToFitHeight = this.canvas.height / this.worldHeight;
-        
-        // Use whichever zoom hits its border first (the larger/more restrictive zoom)
-        const minZoom = Math.max(zoomToFitWidth, zoomToFitHeight);
-        
-        return {
-            min: minZoom,
-            max: 2.0 // Max 2x zoom in
-        };
     }
 }

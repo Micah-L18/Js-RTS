@@ -105,7 +105,7 @@
 
         <!-- Minimap -->
         <div id="minimapPanel" class="overlay-panel minimap-panel">
-            <canvas id="minimapCanvas" width="200" height="150"></canvas>
+            <canvas id="minimapCanvas"></canvas>
             <div class="panel-title">Minimap</div>
         </div>
 
@@ -354,5 +354,28 @@
             });
         });
     </script>
+
+    <!-- Game Over Modal -->
+    <div id="gameOverModal" class="building-modal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="gameOverTitle">Game Over</h3>
+            </div>
+            <div class="modal-body">
+                <div class="modal-section">
+                    <div id="gameOverMessage" class="game-over-message"></div>
+                    <div class="modal-grid">
+                        <button class="modal-btn" onclick="window.location.href='/'">
+                            🏠 Return to Home
+                        </button>
+                        <button class="modal-btn" onclick="location.reload()">
+                            🔄 Play Again
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
 </body>
 </html>

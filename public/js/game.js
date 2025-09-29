@@ -58,6 +58,9 @@ class Game {
             // Set up UI event handlers
             this.setupUIHandlers();
             
+            // Initialize minimap with proper aspect ratio
+            this.initializeMinimap();
+            
             console.log('UI handlers set up, creating initial state...');
             
             // Create initial game state
@@ -181,7 +184,65 @@ class Game {
         // Modal event handlers
         this.setupModalHandlers();
         
+        // Window resize handler to update minimap aspect ratio
+        window.addEventListener('resize', () => {
+            // Debounce resize events
+            clearTimeout(this.resizeTimeout);
+            this.resizeTimeout = setTimeout(() => {
+                this.initializeMinimap();
+            }, 100);
+        });
+        
         console.log('UI handlers setup complete');
+    }
+    
+    initializeMinimap() {
+        const minimapCanvas = document.getElementById('minimapCanvas');
+        if (!minimapCanvas) {
+            console.warn('Minimap canvas not found');
+            return;
+        }
+        
+        const gameCanvas = document.getElementById('gameCanvas');
+        if (!gameCanvas) {
+            console.warn('Game canvas not found');
+            return;
+        }
+        
+        // Get the device pixel ratio for accurate calculations
+        const dpr = window.devicePixelRatio || 1;
+        
+        // Calculate the actual display size of the game canvas
+        const gameDisplayWidth = gameCanvas.width / dpr;
+        const gameDisplayHeight = gameCanvas.height / dpr;
+        const gameAspectRatio = gameDisplayWidth / gameDisplayHeight;
+        
+        // Set minimap size to maintain aspect ratio while fitting in available space
+        const minimapMaxWidth = 200;  // Max width available in UI
+        const minimapMaxHeight = 150; // Max height available in UI
+        
+        let minimapWidth, minimapHeight;
+        
+        if (gameAspectRatio > (minimapMaxWidth / minimapMaxHeight)) {
+            // Game is wider than minimap space - constrain by width
+            minimapWidth = minimapMaxWidth;
+            minimapHeight = minimapMaxWidth / gameAspectRatio;
+        } else {
+            // Game is taller than minimap space - constrain by height
+            minimapHeight = minimapMaxHeight;
+            minimapWidth = minimapMaxHeight * gameAspectRatio;
+        }
+        
+        // Apply the calculated dimensions
+        minimapCanvas.width = Math.round(minimapWidth);
+        minimapCanvas.height = Math.round(minimapHeight);
+        
+        // Also set CSS dimensions to match
+        minimapCanvas.style.width = minimapWidth + 'px';
+        minimapCanvas.style.height = minimapHeight + 'px';
+        
+        console.log(`Minimap initialized: ${minimapWidth}x${minimapHeight} (aspect ratio: ${gameAspectRatio.toFixed(2)})`);
+        console.log(`Game canvas: ${gameDisplayWidth}x${gameDisplayHeight}`);
     }
 
     setupModalHandlers() {
@@ -887,10 +948,11 @@ class Game {
         } else {
             // Single player end game logic with player name
             const playerName = this.playerName || 'Player';
-            const message = winner === this.playerTeam ? 
+            const isVictory = winner === this.playerTeam;
+            const message = isVictory ? 
                 `🎉 Victory! ${playerName} won the game!` : 
                 `💀 Defeat! ${playerName} lost the battle.`;
-            alert(message);
+            this.showGameOverModal(isVictory, message);
         }
     }
 
@@ -1590,6 +1652,33 @@ class Game {
         }
         
         console.log(`Spawned enemy wave of ${count} units`);
+    }
+    
+    showGameOverModal(isVictory, message) {
+        const modal = document.getElementById('gameOverModal');
+        const title = document.getElementById('gameOverTitle');
+        const messageEl = document.getElementById('gameOverMessage');
+        
+        if (!modal || !title || !messageEl) {
+            console.warn('Game over modal elements not found, falling back to alert');
+            alert(message);
+            return;
+        }
+        
+        // Set modal content
+        title.textContent = isVictory ? '🎉 Victory!' : '💀 Defeat!';
+        messageEl.textContent = message;
+        
+        // Apply styling based on outcome
+        messageEl.className = isVictory ? 'game-over-message victory' : 'game-over-message defeat';
+        
+        // Show modal
+        modal.style.display = 'flex';
+        
+        // Pause the game
+        if (this.engine) {
+            this.engine.pause(true);
+        }
     }
     
     showMessage(message, duration = 3000) {

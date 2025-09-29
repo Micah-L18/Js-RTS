@@ -145,7 +145,7 @@
 
             <!-- Minimap -->
             <div id="minimapPanel" class="overlay-panel minimap-panel">
-                <canvas id="minimapCanvas" width="200" height="150"></canvas>
+                <canvas id="minimapCanvas"></canvas>
                 <div class="panel-title">Minimap</div>
                 <div id="enemyBaseCounter" class="enemy-counter" style="display: none;">
                     <div class="counter-label">Enemy Bases Destroyed:</div>
@@ -372,12 +372,15 @@
                 }
             }, 16);
             
-            // Start base counter updates for legendary mode
-            if (selectedDifficulty === 'legendary') {
-                setInterval(() => {
-                    updateEnemyBaseCounter();
-                }, 1000); // Update every second
-            }
+            // Start game state updates for all modes
+            setInterval(() => {
+                if (window.game && window.game.engine) {
+                    if (selectedDifficulty === 'legendary') {
+                        updateEnemyBaseCounter();
+                    }
+                    checkPlayerDefeat(); // Check for defeat in all modes
+                }
+            }, 1000); // Update every second
             
             console.log('Single-player game started successfully');
         }
@@ -451,9 +454,38 @@
         }
         
         let destroyedBasesCount = 0; // Track destroyed bases
+        let allBasesSpawned = false; // Track if all 9 bases have been spawned
+        let expectedBases = 9; // Expected number of AI bases in legendary mode
+        let gameEnded = false; // Prevent multiple game end triggers
+        
+        function checkPlayerDefeat() {
+            if (gameEnded || !window.game || !window.game.engine) return;
+            
+            // Check if player's HQ/base is destroyed
+            const playerBases = window.game.engine.entities.filter(entity => 
+                entity.constructor.name === 'Base' && 
+                entity.team === 'player' &&
+                !entity.isDead &&
+                entity.health > 0
+            );
+            
+            if (playerBases.length === 0) {
+                gameEnded = true;
+                setTimeout(() => {
+                    const difficultyText = selectedDifficulty === 'legendary' ? 'LEGENDARY MODE' : selectedDifficulty.toUpperCase();
+                    alert(`💀 DEFEAT! Your headquarters has been destroyed in ${difficultyText}!`);
+                    // Optionally restart or return to menu
+                }, 100);
+            }
+        }
         
         function updateEnemyBaseCounter() {
             if (selectedDifficulty !== 'legendary' || !window.game || !window.game.engine) return;
+            
+            // Check for player defeat first
+            checkPlayerDefeat();
+            
+            if (gameEnded) return; // Don't update counter if game has ended
             
             // Count current alive enemy bases
             const aliveEnemyBases = window.game.engine.entities.filter(entity => 
@@ -463,14 +495,27 @@
                 entity.health > 0
             );
             
+            // Check if all bases have spawned (wait for all 9 to appear)
+            if (!allBasesSpawned) {
+                if (aliveEnemyBases.length >= expectedBases) {
+                    allBasesSpawned = true;
+                    console.log('All 9 enemy bases have spawned - base counter now active');
+                } else {
+                    // Still waiting for bases to spawn
+                    document.getElementById('basesDestroyed').textContent = '0';
+                    return;
+                }
+            }
+            
             // Calculate destroyed bases from the total expected (9) minus alive bases
             const currentAlive = aliveEnemyBases.length;
-            destroyedBasesCount = 9 - currentAlive;
+            destroyedBasesCount = expectedBases - currentAlive;
             
             document.getElementById('basesDestroyed').textContent = destroyedBasesCount.toString();
             
             // Check for victory condition
-            if (destroyedBasesCount >= 9) {
+            if (destroyedBasesCount >= expectedBases) {
+                gameEnded = true;
                 setTimeout(() => {
                     alert('🏆 VICTORY! You destroyed all 9 enemy bases in legendary mode!');
                 }, 100);
@@ -560,6 +605,28 @@
                         </button>
                         <button class="modal-btn exit-btn" onclick="exitGame()">
                             🚪 Exit Game
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Game Over Modal -->
+    <div id="gameOverModal" class="building-modal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="gameOverTitle">Game Over</h3>
+            </div>
+            <div class="modal-body">
+                <div class="modal-section">
+                    <div id="gameOverMessage" class="game-over-message"></div>
+                    <div class="modal-grid">
+                        <button class="modal-btn" onclick="window.location.href='/'">
+                            🏠 Return to Home
+                        </button>
+                        <button class="modal-btn" onclick="location.reload()">
+                            🔄 Play Again
                         </button>
                     </div>
                 </div>

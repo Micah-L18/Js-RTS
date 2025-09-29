@@ -1517,3 +1517,37 @@ body {
         font-size: 2.5em;
     }
 }
+
+/* Game Over Modal Styling */
+.game-over-message {
+    text-align: center;
+    font-size: 1.5em;
+    margin: 20px 0;
+    padding: 20px;
+    border-radius: 8px;
+    background: linear-gradient(135deg, rgba(0, 212, 255, 0.1), rgba(0, 150, 200, 0.1));
+    border: 1px solid rgba(0, 212, 255, 0.3);
+}
+
+.game-over-message.victory {
+    background: linear-gradient(135deg, rgba(0, 255, 100, 0.1), rgba(0, 200, 80, 0.1));
+    border-color: rgba(0, 255, 100, 0.3);
+    color: #00ff64;
+}
+
+.game-over-message.defeat {
+    background: linear-gradient(135deg, rgba(255, 100, 100, 0.1), rgba(200, 50, 50, 0.1));
+    border-color: rgba(255, 100, 100, 0.3);
+    color: #ff6464;
+}
+
+#gameOverModal .modal-grid {
+    display: flex;
+    gap: 15px;
+    justify-content: center;
+    margin-top: 20px;
+}
+
+#gameOverModal .modal-btn {
+    min-width: 150px;
+}
