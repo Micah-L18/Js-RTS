@@ -14,8 +14,8 @@ class GameEngine {
         this.targetFrameTime = 1000 / this.fps;
         
         // Game world settings
-        this.worldWidth = 2400;
-        this.worldHeight = 1600;
+        this.worldWidth = 2000;
+        this.worldHeight = 2000;
         this.camera = {
             x: 0,
             y: 0,
@@ -54,6 +54,18 @@ class GameEngine {
         
         // Listen for window resize
         window.addEventListener('resize', () => this.resizeCanvas());
+        
+        // Handle page visibility changes to prevent game pause
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden) {
+                console.log('🔇 Page became hidden - maintaining game loop');
+                // Don't pause the game, but we can reduce update frequency if needed
+            } else {
+                console.log('👁️ Page became visible - normal game loop');
+                // Reset timing to prevent huge deltaTime jumps
+                this.lastFrameTime = performance.now();
+            }
+        });
         
         // Set up canvas properties
         this.ctx.imageSmoothingEnabled = false;
@@ -96,7 +108,11 @@ class GameEngine {
         if (!this.isRunning) return;
         
         const currentTime = performance.now();
-        this.deltaTime = (currentTime - this.lastFrameTime) * this.gameSpeed;
+        
+        // Prevent huge time jumps when returning to tab
+        const maxDeltaTime = 100; // Cap at 100ms to prevent physics issues
+        const rawDelta = currentTime - this.lastFrameTime;
+        this.deltaTime = Math.min(rawDelta, maxDeltaTime) * this.gameSpeed;
         this.lastFrameTime = currentTime;
         
         if (!this.isPaused) {
@@ -105,7 +121,14 @@ class GameEngine {
         
         this.render();
         
-        requestAnimationFrame(() => this.gameLoop());
+        // Use requestAnimationFrame normally, but add fallback timer for hidden pages
+        if (document.hidden) {
+            // When page is hidden, use setTimeout to maintain updates (but slower)
+            setTimeout(() => this.gameLoop(), 100); // 10 FPS when hidden
+        } else {
+            // Normal frame rate when visible
+            requestAnimationFrame(() => this.gameLoop());
+        }
     }
     
     update(deltaTime) {
@@ -157,6 +180,9 @@ class GameEngine {
         // Render world border
         this.renderWorldBorder();
         
+        // Render hover glow effects (before entities)
+        this.renderHoverGlows();
+        
         // Render all entities
         this.entities.forEach(entity => {
             if (entity.render) {
@@ -185,6 +211,9 @@ class GameEngine {
         // Render UI elements (not affected by camera)
         this.renderUI();
         
+        // Render minimap
+        this.renderMinimap();
+        
         // Render game-specific elements
         if (window.game && window.game.isInitialized) {
             window.game.render(this.ctx);
@@ -193,29 +222,77 @@ class GameEngine {
     
     renderGrid() {
         const gridSize = 50;
-        const startX = Math.floor(this.camera.x / gridSize) * gridSize;
-        const startY = Math.floor(this.camera.y / gridSize) * gridSize;
-        const endX = this.camera.x + this.canvas.width;
-        const endY = this.camera.y + this.canvas.height;
+        const zoom = this.camera.zoom;
         
-        this.ctx.strokeStyle = '#333';
-        this.ctx.lineWidth = 1;
-        this.ctx.globalAlpha = 0.3;
+        // Don't render grid if zoomed out too much (grid would be too dense)
+        if (zoom < 0.2) return;
         
-        // Vertical lines
-        for (let x = startX; x < endX; x += gridSize) {
-            this.ctx.beginPath();
-            this.ctx.moveTo(x, this.camera.y);
-            this.ctx.lineTo(x, endY);
-            this.ctx.stroke();
+        // Calculate visible world area
+        const viewWidth = this.canvas.width / zoom;
+        const viewHeight = this.canvas.height / zoom;
+        
+        // Calculate which grid lines are visible
+        // Start from the first grid line before the visible area
+        const firstVisibleX = Math.floor(this.camera.x / gridSize) * gridSize;
+        const firstVisibleY = Math.floor(this.camera.y / gridSize) * gridSize;
+        const lastVisibleX = this.camera.x + viewWidth;
+        const lastVisibleY = this.camera.y + viewHeight;
+        
+        // Adjust line width and opacity based on zoom
+        const lineWidth = Math.max(0.5, 1 / zoom);
+        const alpha = Math.min(0.6, Math.max(0.1, zoom * 0.3));
+        
+        this.ctx.strokeStyle = '#444';
+        this.ctx.lineWidth = lineWidth;
+        this.ctx.globalAlpha = alpha;
+        
+        // Draw grid lines in world coordinates (camera transform already applied)
+        // Vertical lines - these should be at fixed world positions like 0, 50, 100, 150, etc.
+        for (let x = firstVisibleX; x <= lastVisibleX + gridSize; x += gridSize) {
+            // Only draw lines within world bounds
+            if (x >= 0 && x <= this.worldWidth) {
+                this.ctx.beginPath();
+                // Line should extend from top to bottom of visible area, clamped to world bounds
+                const lineStartY = Math.max(0, firstVisibleY);
+                const lineEndY = Math.min(this.worldHeight, lastVisibleY + gridSize);
+                this.ctx.moveTo(x, lineStartY);
+                this.ctx.lineTo(x, lineEndY);
+                this.ctx.stroke();
+            }
         }
         
-        // Horizontal lines
-        for (let y = startY; y < endY; y += gridSize) {
-            this.ctx.beginPath();
-            this.ctx.moveTo(this.camera.x, y);
-            this.ctx.lineTo(endX, y);
-            this.ctx.stroke();
+        // Horizontal lines - these should be at fixed world positions like 0, 50, 100, 150, etc.
+        for (let y = firstVisibleY; y <= lastVisibleY + gridSize; y += gridSize) {
+            // Only draw lines within world bounds
+            if (y >= 0 && y <= this.worldHeight) {
+                this.ctx.beginPath();
+                // Line should extend from left to right of visible area, clamped to world bounds
+                const lineStartX = Math.max(0, firstVisibleX);
+                const lineEndX = Math.min(this.worldWidth, lastVisibleX + gridSize);
+                this.ctx.moveTo(lineStartX, y);
+                this.ctx.lineTo(lineEndX, y);
+                this.ctx.stroke();
+            }
+        }
+        
+        // Add snap point indicators when zoomed in enough
+        if (zoom > 1.5) {
+            const snapGridSize = 25; // Same as building placement snap
+            const snapFirstVisibleX = Math.floor(this.camera.x / snapGridSize) * snapGridSize;
+            const snapFirstVisibleY = Math.floor(this.camera.y / snapGridSize) * snapGridSize;
+            const snapLastVisibleX = this.camera.x + viewWidth;
+            const snapLastVisibleY = this.camera.y + viewHeight;
+            
+            this.ctx.fillStyle = '#666';
+            this.ctx.globalAlpha = alpha * 0.5;
+            
+            for (let x = snapFirstVisibleX; x <= snapLastVisibleX + snapGridSize; x += snapGridSize) {
+                for (let y = snapFirstVisibleY; y <= snapLastVisibleY + snapGridSize; y += snapGridSize) {
+                    if (x >= 0 && x <= this.worldWidth && y >= 0 && y <= this.worldHeight) {
+                        this.ctx.fillRect(x - 1/zoom, y - 1/zoom, 2/zoom, 2/zoom);
+                    }
+                }
+            }
         }
         
         this.ctx.globalAlpha = 1;
@@ -311,28 +388,55 @@ class GameEngine {
         this.ctx.strokeRect(x, y, barWidth, barHeight);
     }
     
-    renderUI() {
-        // Render minimap
-        this.renderMinimap();
-        
-        // FPS counter (debug)
-        if (this.showDebug) {
-            this.ctx.fillStyle = '#fff';
-            this.ctx.font = '12px Arial';
-            this.ctx.fillText(`FPS: ${Math.round(1000 / this.deltaTime)}`, 10, 20);
-            this.ctx.fillText(`Entities: ${this.entities.length}`, 10, 35);
-            this.ctx.fillText(`Selected: ${this.selectedEntities.length}`, 10, 50);
-            this.ctx.fillText(`Zoom: ${this.camera.zoom.toFixed(2)}x`, 10, 65);
-            this.ctx.fillText(`Camera: (${Math.round(this.camera.x)}, ${Math.round(this.camera.y)})`, 10, 80);
-            
-            // Show mouse coordinates if input handler is available
-            if (window.game && window.game.inputHandler) {
-                const mouse = window.game.inputHandler.mousePos;
-                const worldMouse = window.game.inputHandler.worldMousePos;
-                this.ctx.fillText(`Mouse Screen: (${Math.round(mouse.x)}, ${Math.round(mouse.y)})`, 10, 95);
-                this.ctx.fillText(`Mouse World: (${Math.round(worldMouse.x)}, ${Math.round(worldMouse.y)})`, 10, 110);
+    renderHoverGlows() {
+        this.entities.forEach(entity => {
+            if (entity.isHovered) {
+                // Create a glowing effect around hovered entities
+                this.ctx.save();
+                
+                const glowRadius = entity.radius * 1.5 || 30; // Fallback radius if entity has no radius
+                const glowIntensity = 0.3 + Math.sin(Date.now() * 0.005) * 0.1; // Pulsing effect
+                
+                // Create radial gradient for glow effect
+                const gradient = this.ctx.createRadialGradient(
+                    entity.position.x, entity.position.y, entity.radius || 20,
+                    entity.position.x, entity.position.y, glowRadius
+                );
+                
+                // Different glow colors for different entity types
+                let glowColor = 'rgba(255, 255, 0, '; // Default yellow
+                if (entity.type === 'building' || entity instanceof Building) {
+                    glowColor = 'rgba(0, 150, 255, '; // Blue for buildings
+                } else if (entity.constructor.name.includes('Unit')) {
+                    glowColor = 'rgba(0, 255, 150, '; // Green for units
+                }
+                
+                gradient.addColorStop(0, glowColor + (glowIntensity * 0.8) + ')');
+                gradient.addColorStop(0.5, glowColor + (glowIntensity * 0.4) + ')');
+                gradient.addColorStop(1, glowColor + '0)');
+                
+                this.ctx.fillStyle = gradient;
+                this.ctx.beginPath();
+                this.ctx.arc(entity.position.x, entity.position.y, glowRadius, 0, Math.PI * 2);
+                this.ctx.fill();
+                
+                this.ctx.restore();
             }
-        }
+        });
+    }
+    
+    renderUI() {
+        // Debug info hidden - uncomment to show debug info in top-left corner
+        /*
+        this.ctx.fillStyle = '#00ff00';
+        this.ctx.font = '16px Arial';
+        this.ctx.fillText(`Entities: ${this.entities.length}`, 10, 30);
+        this.ctx.fillText(`Camera: (${Math.round(this.camera.x)}, ${Math.round(this.camera.y)})`, 10, 50);
+        this.ctx.fillText(`Canvas: ${this.canvas.width} x ${this.canvas.height}`, 10, 70);
+        this.ctx.fillText(`World: ${this.worldWidth} x ${this.worldHeight}`, 10, 90);
+        this.ctx.fillText(`Running: ${this.isRunning}`, 10, 110);
+        this.ctx.fillText(`Frame: ${Math.floor(performance.now() / 1000)}`, 10, 130);
+        */
     }
     
     renderMinimap() {
@@ -357,14 +461,17 @@ class GameEngine {
             }
         });
         
-        // Draw camera viewport
+        // Draw camera viewport rectangle on minimap
+        const viewportWorldWidth = this.canvas.width / this.camera.zoom;
+        const viewportWorldHeight = this.canvas.height / this.camera.zoom;
+        
         minimapCtx.strokeStyle = '#fff';
         minimapCtx.lineWidth = 1;
         minimapCtx.strokeRect(
             this.camera.x * scaleX,
             this.camera.y * scaleY,
-            this.canvas.width * scaleX / this.camera.zoom,
-            this.canvas.height * scaleY / this.camera.zoom
+            viewportWorldWidth * scaleX,
+            viewportWorldHeight * scaleY
         );
     }
     
@@ -399,6 +506,7 @@ class GameEngine {
     selectEntity(entity) {
         if (!this.selectedEntities.includes(entity)) {
             this.selectedEntities.push(entity);
+            this.updateCommandPanelVisibility();
         }
     }
     
@@ -406,36 +514,74 @@ class GameEngine {
         const index = this.selectedEntities.indexOf(entity);
         if (index > -1) {
             this.selectedEntities.splice(index, 1);
+            this.updateCommandPanelVisibility();
         }
     }
     
     clearSelection() {
         this.selectedEntities = [];
+        this.updateCommandPanelVisibility();
+    }
+    
+    updateCommandPanelVisibility() {
+        const commandPanel = document.getElementById('commandPanel');
+        if (commandPanel) {
+            // Show panel if we have buildings selected
+            const hasSelectedBuildings = this.selectedEntities.some(entity => {
+                // Check if entity is a building by class inheritance
+                if (typeof Building !== 'undefined' && entity instanceof Building) {
+                    return true;
+                }
+                // Fallback checks for building types
+                return entity.constructor.name.includes('Building') || 
+                       entity.type === 'building' ||
+                       ['Base', 'Barracks', 'SupplyDepot', 'Reactor', 'Turret'].includes(entity.constructor.name);
+            });
+            commandPanel.style.display = hasSelectedBuildings ? 'block' : 'none';
+        }
     }
     
     moveCamera(dx, dy) {
-        this.camera.x = MathUtils.clamp(
-            this.camera.x + dx,
-            this.camera.bounds.minX,
-            this.camera.bounds.maxX - this.canvas.width / this.camera.zoom
-        );
-        this.camera.y = MathUtils.clamp(
-            this.camera.y + dy,
-            this.camera.bounds.minY,
-            this.camera.bounds.maxY - this.canvas.height / this.camera.zoom
-        );
+        const oldX = this.camera.x;
+        const oldY = this.camera.y;
+        const newX = this.camera.x + dx;
+        const newY = this.camera.y + dy;
+        
+        // Calculate bounds for current zoom level
+        const viewWidth = this.canvas.width / this.camera.zoom;
+        const viewHeight = this.canvas.height / this.camera.zoom;
+        
+        // Camera position represents top-left of viewport
+        // Keep camera strictly within world bounds
+        const maxX = Math.max(0, this.worldWidth - viewWidth);
+        const maxY = Math.max(0, this.worldHeight - viewHeight);
+        const minX = 0;
+        const minY = 0;
+        
+        this.camera.x = MathUtils.clamp(newX, minX, maxX);
+        this.camera.y = MathUtils.clamp(newY, minY, maxY);
     }
     
     setCameraPosition(x, y) {
+        const viewWidth = this.canvas.width / this.camera.zoom;
+        const viewHeight = this.canvas.height / this.camera.zoom;
+        
+        // Camera position represents top-left of viewport
+        // Keep camera strictly within world bounds
+        const maxX = Math.max(0, this.worldWidth - viewWidth);
+        const maxY = Math.max(0, this.worldHeight - viewHeight);
+        const minX = 0;
+        const minY = 0;
+        
         this.camera.x = MathUtils.clamp(
-            x - this.canvas.width / (2 * this.camera.zoom),
-            this.camera.bounds.minX,
-            this.camera.bounds.maxX - this.canvas.width / this.camera.zoom
+            x - viewWidth / 2,
+            minX,
+            maxX
         );
         this.camera.y = MathUtils.clamp(
-            y - this.canvas.height / (2 * this.camera.zoom),
-            this.camera.bounds.minY,
-            this.camera.bounds.maxY - this.canvas.height / this.camera.zoom
+            y - viewHeight / 2,
+            minY,
+            maxY
         );
     }
     
@@ -457,6 +603,14 @@ class GameEngine {
         return Date.now().toString(36) + Math.random().toString(36).substr(2);
     }
     
+    setWorldSize(width, height) {
+        this.worldWidth = width;
+        this.worldHeight = height;
+        this.camera.bounds.maxX = width;
+        this.camera.bounds.maxY = height;
+        console.log(`World size set to ${width}x${height}, camera bounds updated`);
+    }
+    
     getEntitiesInArea(x, y, width, height) {
         return this.entities.filter(entity => {
             if (!entity.position) return false;
@@ -473,5 +627,20 @@ class GameEngine {
             if (!entity.position) return false;
             return entity.position.distance(position) <= radius;
         });
+    }
+
+    getZoomLimits() {
+        // Calculate minimum zoom to fit entire world in viewport
+        // We need the zoom value that hits the border first (most restrictive)
+        const zoomToFitWidth = this.canvas.width / this.worldWidth;
+        const zoomToFitHeight = this.canvas.height / this.worldHeight;
+        
+        // Use whichever zoom hits its border first (the larger/more restrictive zoom)
+        const minZoom = Math.max(zoomToFitWidth, zoomToFitHeight);
+        
+        return {
+            min: minZoom,
+            max: 2.0 // Max 2x zoom in
+        };
     }
 }

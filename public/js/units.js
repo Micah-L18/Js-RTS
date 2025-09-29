@@ -514,19 +514,19 @@ class Warthog extends Unit {
     constructor(x, y, team = 'player') {
         super(x, y, team);
         
-        this.maxHealth = 150;
+        this.maxHealth = 300; // 2x defensive strength (was 150)
         this.health = this.maxHealth;
-        this.damage = 15;
+        this.damage = 45; // 3x attack damage (was 15)
         this.attackRange = 120;
-        this.maxSpeed = 120; // Fastest unit
+        this.maxSpeed = 360; // 3x faster (was 120)
         this.attackCooldown = 600;
         this.radius = 20;
         this.size = 35;
         
-        this.supplyCost = 100; // Warthogs cost 100 supplies
+        this.supplyCost = 150; // Changed from 100 to 150
         this.powerCost = 1; // Warthogs require 1 power
         this.populationCost = 3; // Warthogs take 3 population space
-        this.buildTime = 4000;
+        this.buildTime = 8000; // 2x build time (was 4000)
         
         this.color = team === 'player' ? '#664400' : '#442200';
     }
@@ -579,19 +579,19 @@ class Scorpion extends Unit {
     constructor(x, y, team = 'player') {
         super(x, y, team);
         
-        this.maxHealth = 300;
+        this.maxHealth = 1500; // 5x defensive strength (was 300)
         this.health = this.maxHealth;
-        this.damage = 60;
+        this.damage = 300; // 5x attack damage (was 60)
         this.attackRange = 150;
-        this.maxSpeed = 40; // Slowest unit
-        this.attackCooldown = 2000;
+        this.maxSpeed = 13; // 1/3 movement speed (was 40)
+        this.attackCooldown = 6000; // 1/3 attack speed - 3x slower (was 2000)
         this.radius = 25;
         this.size = 45;
         
-        this.supplyCost = 150; // Scorpions cost 150 supplies
+        this.supplyCost = 500; // Changed from 150 to 500
         this.powerCost = 2; // Scorpions require 2 power
         this.populationCost = 5; // Scorpions take 5 population space
-        this.buildTime = 8000;
+        this.buildTime = 24000; // 3x build time (was 8000)
         
         this.color = team === 'player' ? '#004400' : '#440000';
     }

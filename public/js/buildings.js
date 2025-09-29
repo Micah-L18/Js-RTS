@@ -221,7 +221,8 @@ class Building {
                 return false;
             }
             
-            window.game.resources.spendResources(unitCost.supplies, 0); // Only spend supplies
+            // Spend supplies when queuing
+            window.game.resources.spendResources(unitCost.supplies, 0); 
         }
         
         this.productionQueue.push({
@@ -230,6 +231,12 @@ class Building {
             progress: 0,
             cost: unitCost
         });
+        
+        // Update population immediately to show reserved population
+        if (window.game.resources) {
+            window.game.resources.updatePopulation();
+            window.game.resources.updateUI();
+        }
         
         return true;
     }
@@ -372,7 +379,7 @@ class Building {
             window.game.engine.deselectEntity(this);
         }
         
-        // Cancel production
+        // Cancel production - queued units will be automatically removed from population count
         this.productionQueue = [];
         this.currentProduction = null;
         this.isProducing = false;
@@ -616,10 +623,10 @@ class Turret extends Building {
         
         this.color = team === 'player' ? '#666666' : '#993333';
         
-        // Combat properties - Much stronger than marines
-        this.damage = 75; // More than doubled from 35 - can kill marine in 2 hits
-        this.attackRange = 180; // Increased from 150 - much longer range than marines
-        this.attackCooldown = 300; // Even faster from 500ms - very high rate of fire
+        // Combat properties - Rapid fire, low damage
+        this.damage = 25; // Much lower damage per shot (was 75)
+        this.attackRange = 180; // Keep same range
+        this.attackCooldown = 150; // Much faster rate of fire (was 300ms)
         this.lastAttackTime = 0;
         this.attackTarget = null;
         

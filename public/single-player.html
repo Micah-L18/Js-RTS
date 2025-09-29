@@ -1,0 +1,571 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Halo Wars JS - Single Player Campaign</title> 
+    <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+    <div id="gameContainer">
+        <!-- Single Player Lobby Interface -->
+        <div id="singlePlayerLobby" class="lobby-interface">
+            <div class="lobby-container">
+                <h1>🎮 Halo Wars JS - Single Player</h1>
+                
+                <div id="campaignMenu" class="lobby-section">
+                    <div class="campaign-info">
+                        <h2>🏔️ Operation: Fortress Assault</h2>
+                        <p>An enemy AI has constructed a heavily fortified base with defensive turrets and a standing army. 
+                        Your mission is to build your forces and destroy their headquarters.</p>
+                        
+                        <div class="mission-objectives">
+                            <h3>📋 Mission Objectives:</h3>
+                            <ul>
+                                <li>✓ Build your economy and military</li>
+                                <li>✓ Destroy the enemy AI base</li>
+                                <li>⚠️ Defend against AI attack waves</li>
+                                <li>💀 Survive the heavily defended enemy turrets</li>
+                            </ul>
+                        </div>
+                        
+                        <div class="difficulty-selection">
+                            <h3>🎯 Select Difficulty:</h3>
+                            <div class="difficulty-buttons">
+                                <button id="easyBtn" class="difficulty-btn easy-btn">
+                                    <div class="difficulty-icon">😊</div>
+                                    <div class="difficulty-name">Easy</div>
+                                    <div class="difficulty-desc">Slow AI attacks, smaller waves</div>
+                                </button>
+                                <button id="normalBtn" class="difficulty-btn normal-btn selected">
+                                    <div class="difficulty-icon">😐</div>
+                                    <div class="difficulty-name">Normal</div>
+                                    <div class="difficulty-desc">Balanced gameplay</div>
+                                </button>
+                                <button id="hardBtn" class="difficulty-btn hard-btn">
+                                    <div class="difficulty-icon">😠</div>
+                                    <div class="difficulty-name">Hard</div>
+                                    <div class="difficulty-desc">Aggressive AI, large waves</div>
+                                </button>
+                                <button id="legendaryBtn" class="difficulty-btn legendary-btn">
+                                    <div class="difficulty-icon">💀</div>
+                                    <div class="difficulty-name">Legendary</div>
+                                    <div class="difficulty-desc">9 AIs surround you on 5km map - survive!</div>
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <div class="player-setup">
+                            <div class="nickname-section">
+                                <input type="text" id="playerNickname" placeholder="Enter your commander name" maxlength="20" value="Commander">
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="campaign-actions">
+                        <button id="startSinglePlayerBtn" class="lobby-btn primary large">🚀 Start Mission</button>
+                        <button id="backToMenuBtn" class="lobby-btn secondary">← Back to Main Menu</button>
+                    </div>
+                </div>
+                
+                <div id="missionBriefing" class="lobby-section" style="display: none;">
+                    <h2>🎯 Mission Briefing</h2>
+                    <div class="briefing-content">
+                        <div class="briefing-text">
+                            <p><strong>Intelligence Report:</strong></p>
+                            <ul>
+                                <li>Enemy base located in the eastern sector</li>
+                                <li>6 defensive turrets protecting the perimeter</li>
+                                <li>Mixed enemy force: Marines, Warthogs, and Scorpion tanks</li>
+                                <li>Enemy will launch periodic attack waves</li>
+                                <li>Expect increased resistance over time</li>
+                            </ul>
+                            
+                            <p><strong>Recommended Strategy:</strong></p>
+                            <ul>
+                                <li>Establish economy first (Supply Depots and Reactors)</li>
+                                <li>Build Barracks to train units</li>
+                                <li>Consider defensive turrets for your base</li>
+                                <li>Use mixed unit composition for balanced attacks</li>
+                            </ul>
+                        </div>
+                        
+                        <div class="countdown-display">
+                            <div class="countdown-text">Mission starts in:</div>
+                            <div id="countdownTimer" class="countdown-number">3</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Full Screen Canvas -->
+        <canvas id="gameCanvas"></canvas>
+        
+        <!-- Game UI (same as multiplayer) -->
+        <div id="gameUI" style="display: none;">
+            <!-- Top Resource Bar -->
+            <div id="topResourceBar" class="top-bar">
+                <div id="resourceDisplay">
+                    <div class="resource-item">
+                        <span class="resource-icon">💰</span>
+                        <span class="resource-label">Supplies:</span>
+                        <span id="supplies" class="resource-value">1000</span>
+                    </div>
+                    <div class="resource-item">
+                        <span class="resource-icon">⚡</span>
+                        <span class="resource-label">Power:</span>
+                        <span id="power" class="resource-value">0</span>
+                    </div>
+                    <div class="resource-item">
+                        <span class="resource-icon">👥</span>
+                        <span class="resource-label">Population:</span>
+                        <span class="current-pop">0</span>/<span class="max-pop">25</span>
+                    </div>
+                </div>
+                
+                <!-- Mission Status -->
+                <div id="missionStatus" class="mission-status">
+                    <!-- Temporarily commented out - will be re-enabled later
+                    <div class="status-item">
+                        <span class="status-label">Next Wave:</span>
+                        <span id="nextWaveTimer" class="status-value">45s</span>
+                    </div>
+                    <div class="status-item">
+                        <span class="status-label">Difficulty:</span>
+                        <span id="currentDifficulty" class="status-value">Normal</span>
+                    </div>
+                    -->
+                </div>
+                
+                <!-- Game Settings Button -->
+                <div id="gameSettings" class="game-settings">
+                    <button id="settingsBtn" class="settings-btn" title="Game Settings (ESC)">⚙️</button>
+                </div>
+            </div>
+
+            <!-- Minimap -->
+            <div id="minimapPanel" class="overlay-panel minimap-panel">
+                <canvas id="minimapCanvas" width="200" height="150"></canvas>
+                <div class="panel-title">Minimap</div>
+                <div id="enemyBaseCounter" class="enemy-counter" style="display: none;">
+                    <div class="counter-label">Enemy Bases Destroyed:</div>
+                    <div class="counter-value">
+                        <span id="basesDestroyed">0</span>/<span id="totalBases">9</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Command Panel -->
+            <div id="commandPanel" class="overlay-panel command-panel" style="display: none;">
+                <div class="command-tabs">
+                    <button class="tab-btn active" data-tab="units">Units</button>
+                    <button class="tab-btn" data-tab="buildings">Buildings</button>
+                    <button class="tab-btn" data-tab="actions">Actions</button>
+                </div>
+                
+                <div id="unitsTab" class="command-section active">
+                    <div class="command-grid">
+                        <button class="command-btn unit-btn" data-unit="marine">
+                            <div class="btn-icon">🪖</div>
+                            <div class="btn-label">Marine</div>
+                            <div class="btn-cost">50💰 1👥</div>
+                        </button>
+                        <button class="command-btn unit-btn" data-unit="warthog">
+                            <div class="btn-icon">🚗</div>
+                            <div class="btn-label">Warthog</div>
+                            <div class="btn-cost">150💰 1⚡ 3👥</div>
+                        </button>
+                        <button class="command-btn unit-btn" data-unit="scorpion">
+                            <div class="btn-icon">🦂</div>
+                            <div class="btn-label">Scorpion</div>
+                            <div class="btn-cost">500💰 2⚡ 5👥</div>
+                        </button>
+                    </div>
+                </div>
+
+                <div id="buildingsTab" class="command-section">
+                    <div class="command-grid">
+                        <button class="command-btn building-btn" data-building="supply">
+                            <div class="btn-icon">📦</div>
+                            <div class="btn-label">Supply Depot</div>
+                            <div class="btn-cost">150💰</div>
+                        </button>
+                        <button class="command-btn building-btn" data-building="barracks">
+                            <div class="btn-icon">🏠</div>
+                            <div class="btn-label">Barracks</div>
+                            <div class="btn-cost">300💰</div>
+                        </button>
+                        <button class="command-btn building-btn" data-building="turret">
+                            <div class="btn-icon">🎯</div>
+                            <div class="btn-label">Turret</div>
+                            <div class="btn-cost">250💰 1⚡</div>
+                        </button>
+                        <button class="command-btn building-btn" data-building="reactor">
+                            <div class="btn-icon">⚡</div>
+                            <div class="btn-label">Reactor</div>
+                            <div class="btn-cost">250+💰</div>
+                        </button>
+                    </div>
+                </div>
+
+                <div id="actionsTab" class="command-section">
+                    <div class="command-grid">
+                        <button class="command-btn action-btn" id="stopBtn">
+                            <div class="btn-icon">⏹️</div>
+                            <div class="btn-label">Stop</div>
+                        </button>
+                        <button class="command-btn action-btn" id="holdBtn">
+                            <div class="btn-icon">🛡️</div>
+                            <div class="btn-label">Hold Position</div>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Selected Entity Panel -->
+            <div id="selectedEntityPanel" class="overlay-panel selected-entity-panel">
+                <div id="selectedUnitsDisplay" style="display: none;"></div>
+                <div id="selectedBuildingDisplay" style="display: none;"></div>
+            </div>
+        </div> <!-- End Game UI -->
+    </div>
+
+    <!-- Include Scripts in correct order -->
+    <script src="js/math-utils.js"></script>
+    <script src="js/client-logger.js"></script>
+    <script src="js/resources.js"></script>
+    <script src="js/game-engine.js"></script>
+    <script src="js/units.js"></script>
+    <script src="js/buildings.js"></script>
+    <script src="js/renderer.js"></script>
+    <script src="js/input-handler.js"></script>
+    <script src="js/ai-opponent.js"></script>
+    <script src="js/game.js"></script>
+    
+    <!-- Single-player initialization -->
+    <script>
+        console.log('=== Single Player Mode ===');
+        
+        let selectedDifficulty = 'normal';
+        let aiOpponents = []; // Array to hold multiple AI opponents
+        let gameStartTime = null; // Track when game started
+        let missionStartTime = null;
+        let gameStats = { unitsTrained: 0, enemiesDefeated: 0, buildingsBuilt: 0 };
+        
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('Setting up single-player interface...');
+            
+            // Difficulty selection
+            document.getElementById('easyBtn').addEventListener('click', () => selectDifficulty('easy'));
+            document.getElementById('normalBtn').addEventListener('click', () => selectDifficulty('normal'));
+            document.getElementById('hardBtn').addEventListener('click', () => selectDifficulty('hard'));
+            document.getElementById('legendaryBtn').addEventListener('click', () => selectDifficulty('legendary'));
+            
+            // Main buttons
+            document.getElementById('startSinglePlayerBtn').addEventListener('click', startMissionBriefing);
+            document.getElementById('backToMenuBtn').addEventListener('click', () => {
+                window.location.href = 'index.html';
+            });
+        });
+        
+        function selectDifficulty(difficulty) {
+            selectedDifficulty = difficulty;
+            document.querySelectorAll('.difficulty-btn').forEach(btn => btn.classList.remove('selected'));
+            document.getElementById(difficulty + 'Btn').classList.add('selected');
+            document.getElementById('currentDifficulty').textContent = difficulty.charAt(0).toUpperCase() + difficulty.slice(1);
+        }
+        
+        function startMissionBriefing() {
+            document.getElementById('campaignMenu').style.display = 'none';
+            document.getElementById('missionBriefing').style.display = 'block';
+            
+            let countdown = 3;
+            const countdownElement = document.getElementById('countdownTimer');
+            
+            const countdownInterval = setInterval(() => {
+                countdown--;
+                countdownElement.textContent = countdown;
+                
+                if (countdown <= 0) {
+                    clearInterval(countdownInterval);
+                    startSinglePlayerGame();
+                }
+            }, 1000);
+        }
+        
+        function startSinglePlayerGame() {
+            console.log('Starting single-player game...');
+            
+            // Hide lobby, show game UI
+            document.getElementById('singlePlayerLobby').style.display = 'none';
+            document.getElementById('gameUI').style.display = 'block';
+
+            missionStartTime = Date.now();
+            gameStartTime = Date.now(); // Track game start time for settings modal            // Create game instance
+            window.game = new Game();
+            window.game.isMultiplayer = false;
+            window.game.playerTeam = 'player';
+            
+            // Initialize game systems
+            window.game.init();
+            
+            // Clear default entities and setup custom single-player state
+            window.game.engine.entities = [];
+            
+            // Set world size based on difficulty
+            if (selectedDifficulty === 'legendary') {
+                window.game.engine.setWorldSize(5000, 5000);
+                console.log('Legendary mode: World size set to 5000x5000 with updated camera bounds');
+                
+                // Show enemy base counter for legendary mode
+                document.getElementById('enemyBaseCounter').style.display = 'block';
+                document.getElementById('totalBases').textContent = '9';
+                document.getElementById('basesDestroyed').textContent = '0';
+            } else {
+                // Hide counter for other difficulties
+                document.getElementById('enemyBaseCounter').style.display = 'none';
+            }
+            
+            setupSinglePlayerGameState();
+
+            // Initialize AI opponents based on difficulty
+            if (selectedDifficulty === 'legendary') {
+                // Create 9 individual AI opponents on the same team for legendary mode
+                for (let i = 0; i < 9; i++) {
+                    const aiOpponent = new AIOpponent('enemy', `legendary_ai_${i}`); // Same team, unique IDs
+                    aiOpponent.setDifficulty(selectedDifficulty);
+                    aiOpponent.aiIndex = i; // For unique positioning around the circle
+                    aiOpponents.push(aiOpponent);
+                    console.log(`Created individual AI opponent ${i + 1} with ID: ${aiOpponent.aiId}`);
+                }
+                
+                // Initialize all AI bases with delay
+                setTimeout(() => {
+                    aiOpponents.forEach((ai, index) => {
+                        setTimeout(() => {
+                            ai.initializeLegendaryBase(index);
+                            ai.start();
+                            console.log(`AI opponent ${index + 1} started on team 'enemy'`);
+                        }, index * 500); // Stagger initialization
+                    });
+                }, 1000);
+                
+            } else {
+                // Single AI opponent for other difficulties
+                const aiOpponent = new AIOpponent('enemy');
+                aiOpponent.setDifficulty(selectedDifficulty);
+                aiOpponents.push(aiOpponent);
+                
+                setTimeout(() => {
+                    aiOpponent.initializeBase();
+                    aiOpponent.start();
+                    console.log('AI opponent started');
+                }, 1000);
+            }
+
+            // Start AI updates
+            setInterval(() => {
+                if (aiOpponents.length > 0 && window.game) {
+                    aiOpponents.forEach(ai => {
+                        if (ai) ai.update(16);
+                    });
+                }
+            }, 16);
+            
+            // Start base counter updates for legendary mode
+            if (selectedDifficulty === 'legendary') {
+                setInterval(() => {
+                    updateEnemyBaseCounter();
+                }, 1000); // Update every second
+            }
+            
+            console.log('Single-player game started successfully');
+        }
+        
+        function setupSinglePlayerGameState() {
+            let playerBaseX, playerBaseY;
+            
+            if (selectedDifficulty === 'legendary') {
+                // Position player in the center of the 5000x5000 map
+                playerBaseX = 2500; // Center of 5000x5000 map
+                playerBaseY = 2500;
+            } else {
+                // Standard positioning for other difficulties  
+                playerBaseX = 200;
+                playerBaseY = 800;
+            }
+            
+            // Create player base
+            const playerBase = BuildingFactory.create('base', playerBaseX, playerBaseY, 'player');
+            playerBase.id = 'player_base_main';
+            playerBase.isUnderConstruction = false;
+            window.game.engine.addEntity(playerBase);
+            
+            // Create initial supply depot
+            const supplyDepot = BuildingFactory.create('supply', playerBaseX + 100, playerBaseY + 150, 'player');
+            supplyDepot.id = 'player_supply_initial';
+            supplyDepot.isUnderConstruction = false;
+            window.game.engine.addEntity(supplyDepot);
+            
+            // Create initial marines
+            for (let i = 0; i < 3; i++) {
+                const angle = (i / 3) * Math.PI * 2;
+                const spawnX = playerBaseX + Math.cos(angle) * 80;
+                const spawnY = playerBaseY + Math.sin(angle) * 80;
+                
+                const marine = UnitFactory.create('marine', spawnX, spawnY, 'player');
+                marine.id = `player_marine_initial_${i}`;
+                window.game.engine.addEntity(marine);
+            }
+            
+            // Position camera to show player base
+            window.game.engine.setCameraPosition(playerBaseX - 300, playerBaseY - 300);
+            
+            console.log(`Player base created at (${playerBaseX}, ${playerBaseY})`);
+            console.log(`Total entities: ${window.game.engine.entities.length}`);
+        }
+
+        // Settings Modal Functions
+        function showSettingsModal() {
+            document.getElementById('gameSettingsModal').style.display = 'flex';
+            
+            // Update time elapsed
+            updateTimeElapsed();
+            
+            // Update pause button text based on current state
+            const pauseBtn = document.getElementById('pauseButtonText');
+            if (window.game && window.game.engine) {
+                pauseBtn.textContent = window.game.engine.isPaused ? '▶️ Resume Game' : '⏸️ Pause Game';
+            }
+        }
+
+        function updateTimeElapsed() {
+            if (gameStartTime) {
+                const elapsed = Date.now() - gameStartTime;
+                const minutes = Math.floor(elapsed / 60000);
+                const seconds = Math.floor((elapsed % 60000) / 1000);
+                
+                const timeString = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+                document.getElementById('timeElapsed').textContent = timeString;
+            }
+        }
+        
+        let destroyedBasesCount = 0; // Track destroyed bases
+        
+        function updateEnemyBaseCounter() {
+            if (selectedDifficulty !== 'legendary' || !window.game || !window.game.engine) return;
+            
+            // Count current alive enemy bases
+            const aliveEnemyBases = window.game.engine.entities.filter(entity => 
+                entity.constructor.name === 'Base' && 
+                entity.team === 'enemy' &&
+                !entity.isDead &&
+                entity.health > 0
+            );
+            
+            // Calculate destroyed bases from the total expected (9) minus alive bases
+            const currentAlive = aliveEnemyBases.length;
+            destroyedBasesCount = 9 - currentAlive;
+            
+            document.getElementById('basesDestroyed').textContent = destroyedBasesCount.toString();
+            
+            // Check for victory condition
+            if (destroyedBasesCount >= 9) {
+                setTimeout(() => {
+                    alert('🏆 VICTORY! You destroyed all 9 enemy bases in legendary mode!');
+                }, 100);
+            }
+        }
+
+        function hideSettingsModal() {
+            document.getElementById('gameSettingsModal').style.display = 'none';
+        }
+
+        function togglePause() {
+            if (window.game && window.game.engine) {
+                window.game.engine.pause();
+                // Update button text
+                const pauseBtn = document.getElementById('pauseButtonText');
+                pauseBtn.textContent = window.game.engine.isPaused ? '▶️ Resume Game' : '⏸️ Pause Game';
+            }
+        }
+
+        function resetCamera() {
+            if (window.game && window.game.engine) {
+                // Find player base
+                const playerBases = window.game.engine.entities.filter(entity => 
+                    entity.constructor.name === 'Base' && entity.team === 'player'
+                );
+                if (playerBases.length > 0) {
+                    const base = playerBases[0];
+                    window.game.engine.setCameraPosition(base.position.x - 300, base.position.y - 300);
+                }
+            }
+        }
+
+        function exitGame() {
+            if (confirm('Are you sure you want to exit the game? Your progress will be lost.')) {
+                // Stop the game engine
+                if (window.game && window.game.engine) {
+                    window.game.engine.stop();
+                }
+                // Redirect to main menu
+                window.location.href = 'index.html';
+            }
+        }
+
+        // Add event listener for the settings button
+        document.addEventListener('DOMContentLoaded', function() {
+            const settingsBtn = document.getElementById('settingsBtn');
+            if (settingsBtn) {
+                settingsBtn.addEventListener('click', showSettingsModal);
+            }
+        });
+    </script>
+
+    <!-- Game Settings Modal -->
+    <div id="gameSettingsModal" class="building-modal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Game Settings</h3>
+                <button class="modal-close" onclick="hideSettingsModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="modal-section time-section">
+                    <div class="time-elapsed">
+                        <span class="time-label">Time Elapsed:</span>
+                        <span id="timeElapsed" class="time-value">00:00</span>
+                    </div>
+                </div>
+                <div class="modal-section">
+                    <h4>Game Controls</h4>
+                    <div class="settings-info">
+                        <p><strong>WASD / Arrow Keys:</strong> Move camera</p>
+                        <p><strong>Mouse Wheel:</strong> Zoom in/out</p>
+                        <p><strong>Left Click:</strong> Select units/buildings</p>
+                        <p><strong>Right Click:</strong> Move/Attack command</p>
+                        <p><strong>Ctrl + Click:</strong> Multi-select</p>
+                        <p><strong>Space:</strong> Pause/Unpause game</p>
+                        <p><strong>ESC:</strong> Deselect all</p>
+                    </div>
+                </div>
+                <div class="modal-section">
+                    <h4>Game Actions</h4>
+                    <div class="settings-controls">
+                        <button class="modal-btn" onclick="togglePause()">
+                            <span id="pauseButtonText">⏸️ Pause Game</span>
+                        </button>
+                        <button class="modal-btn" onclick="resetCamera()">
+                            📍 Reset Camera to Base
+                        </button>
+                        <button class="modal-btn exit-btn" onclick="exitGame()">
+                            🚪 Exit Game
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+</body>
+</html>

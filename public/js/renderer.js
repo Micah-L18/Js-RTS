@@ -324,6 +324,14 @@ class UIRenderer {
             const buildingType = button.getAttribute('data-building');
             const cost = BuildingFactory.getBuildingCost(buildingType);
             
+            // Update reactor cost display dynamically
+            if (buildingType === 'reactor') {
+                const costElement = button.querySelector('.btn-cost');
+                if (costElement) {
+                    costElement.textContent = `${cost.supplies}💰`;
+                }
+            }
+            
             // Buildings don't consume population, only check supplies and power
             const canAfford = window.game.resources.supplies >= cost.supplies && 
                              window.game.resources.power >= cost.power;

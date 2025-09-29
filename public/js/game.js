@@ -86,11 +86,24 @@ class Game {
             });
         });
         
-        // Unit production buttons
+        // Unit production buttons - remove existing listeners first
         const unitButtons = document.querySelectorAll('.unit-btn');
         console.log(`Found ${unitButtons.length} unit buttons`);
         unitButtons.forEach(button => {
+            // Clone node to remove all existing event listeners
+            const newButton = button.cloneNode(true);
+            button.parentNode.replaceChild(newButton, button);
+        });
+        
+        // Re-add event listeners to the fresh buttons
+        document.querySelectorAll('.unit-btn').forEach(button => {
             button.addEventListener('click', (e) => {
+                // Check if button is disabled
+                if (button.disabled || button.hasAttribute('disabled')) {
+                    console.log(`Button ${button.getAttribute('data-unit')} is disabled, ignoring click`);
+                    return;
+                }
+                
                 e.preventDefault();
                 e.stopPropagation();
                 const unitType = button.getAttribute('data-unit');
@@ -98,6 +111,11 @@ class Game {
                 console.log('Button element:', button);
                 console.log('Event:', e);
                 this.handleUnitProduction(unitType);
+                
+                // If this is a unit button in a modal, close the modal
+                if (button.classList.contains('modal-btn')) {
+                    this.closeAllModals();
+                }
             });
         });
         
@@ -167,8 +185,8 @@ class Game {
     }
 
     setupModalHandlers() {
-        // Remove existing event listeners first to prevent duplicates
-        document.querySelectorAll('.modal-btn').forEach(button => {
+        // Remove existing event listeners from non-unit modal buttons only
+        document.querySelectorAll('.modal-btn:not(.unit-btn)').forEach(button => {
             // Clone the node to remove all event listeners
             const newButton = button.cloneNode(true);
             button.parentNode.replaceChild(newButton, button);
@@ -190,16 +208,13 @@ class Game {
             });
         });
 
-        // Modal button handlers - re-attach after cloning
-        document.querySelectorAll('.modal-btn').forEach(button => {
+        // Modal button handlers - only add to non-unit buttons
+        document.querySelectorAll('.modal-btn:not(.unit-btn)').forEach(button => {
             button.addEventListener('click', (e) => {
                 e.preventDefault();
                 e.stopPropagation();
                 
-                if (button.classList.contains('unit-btn')) {
-                    const unitType = button.getAttribute('data-unit');
-                    this.handleUnitProduction(unitType);
-                } else if (button.classList.contains('building-btn')) {
+                if (button.classList.contains('building-btn')) {
                     const buildingType = button.getAttribute('data-building');
                     this.handleBuildingPlacement(buildingType);
                 }
@@ -1014,6 +1029,32 @@ class Game {
             return;
         }
         
+        // Check building limits
+        const playerBuildings = this.engine.entities.filter(entity => 
+            entity instanceof Building && 
+            entity.team === this.playerTeam && 
+            !entity.isDead
+        );
+        
+        // Count existing buildings of this type
+        const buildingCounts = {
+            barracks: playerBuildings.filter(b => b.constructor.name === 'Barracks').length,
+            reactor: playerBuildings.filter(b => b.constructor.name === 'Reactor').length
+        };
+        
+        // Check building limits
+        if (buildingType === 'barracks' && buildingCounts.barracks >= 5) {
+            this.showMessage('Maximum 5 Barracks allowed');
+            console.log('Maximum 5 Barracks allowed');
+            return;
+        }
+        
+        if (buildingType === 'reactor' && buildingCounts.reactor >= 2) {
+            this.showMessage('Maximum 2 Reactors allowed');
+            console.log('Maximum 2 Reactors allowed');
+            return;
+        }
+        
         // If already in building placement mode, exit first
         if (this.buildMode === 'building') {
             this.exitBuildingPlacement();
@@ -1045,29 +1086,43 @@ class Game {
     
     placeBuildingAtMouse(e, buildingType, cost) {
         const rect = this.engine.canvas.getBoundingClientRect();
-        const mousePos = new Vector2(e.clientX - rect.left, e.clientY - rect.top);
+        
+        // Account for canvas scaling and device pixel ratio (same as input handler)
+        const scaleX = this.engine.canvas.width / rect.width;
+        const scaleY = this.engine.canvas.height / rect.height;
+        
+        const mousePos = new Vector2(
+            (e.clientX - rect.left) * scaleX,
+            (e.clientY - rect.top) * scaleY
+        );
         const worldPos = this.engine.screenToWorld(mousePos.x, mousePos.y);
         
+        // Snap to grid for better placement (optional - can be removed if unwanted)
+        const gridSize = 25; // Half of visual grid for better precision
+        const snappedX = Math.round(worldPos.x / gridSize) * gridSize;
+        const snappedY = Math.round(worldPos.y / gridSize) * gridSize;
+        const snappedPos = new Vector2(snappedX, snappedY);
+        
         // Check if position is valid (not overlapping other buildings)
-        if (this.isValidBuildingPosition(worldPos, buildingType)) {
+        if (this.isValidBuildingPosition(snappedPos, buildingType)) {
             // Spend resources and add to queue
             this.resources.spendResources(cost.supplies, cost.power);
             
             // Add building to queue
             this.addBuildingToQueue({
                 type: buildingType,
-                position: { x: worldPos.x, y: worldPos.y },
+                position: { x: snappedPos.x, y: snappedPos.y },
                 cost: cost,
                 team: this.playerTeam
             });
             
-            console.log(`${buildingType} queued for construction at (${Math.round(worldPos.x)}, ${Math.round(worldPos.y)})`);
+            console.log(`${buildingType} queued for construction at (${Math.round(snappedPos.x)}, ${Math.round(snappedPos.y)})`);
             
             // Send multiplayer action
             if (this.isMultiplayer) {
                 this.sendMultiplayerAction('buildingQueue', {
                     type: buildingType,
-                    position: { x: worldPos.x, y: worldPos.y },
+                    position: { x: snappedPos.x, y: snappedPos.y },
                     team: this.playerTeam
                 });
             }
@@ -1290,7 +1345,14 @@ class Game {
     renderBuildingPreview(ctx) {
         if (!this.buildingToPlace) return;
         
-        const worldPos = this.inputHandler.worldMousePos;
+        const rawWorldPos = this.inputHandler.worldMousePos;
+        
+        // Snap to grid for preview (same as placement)
+        const gridSize = 25;
+        const snappedX = Math.round(rawWorldPos.x / gridSize) * gridSize;
+        const snappedY = Math.round(rawWorldPos.y / gridSize) * gridSize;
+        const worldPos = new Vector2(snappedX, snappedY);
+        
         const isValid = this.isValidBuildingPosition(worldPos, this.buildingToPlace);
         
         const tempBuilding = BuildingFactory.create(this.buildingToPlace, worldPos.x, worldPos.y);
@@ -1307,6 +1369,18 @@ class Game {
             tempBuilding.width * this.engine.camera.zoom,
             tempBuilding.height * this.engine.camera.zoom
         );
+        
+        // Add grid snap indicator
+        ctx.globalAlpha = 0.3;
+        ctx.strokeStyle = isValid ? '#00ff00' : '#ff0000';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(
+            screenPos.x - (tempBuilding.width * this.engine.camera.zoom) / 2,
+            screenPos.y - (tempBuilding.height * this.engine.camera.zoom) / 2,
+            tempBuilding.width * this.engine.camera.zoom,
+            tempBuilding.height * this.engine.camera.zoom
+        );
+        
         ctx.restore();
     }
     

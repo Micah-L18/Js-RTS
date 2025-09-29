@@ -43,7 +43,17 @@ class InputHandler {
         this.movementTargets = []; // Array of {position: Vector2, timestamp: number}
         this.movementIndicatorDuration = 2000; // 2 seconds
         
+        // Hover effects
+        this.hoveredEntity = null;
+        
         this.init();
+    }
+    
+    clearHoverState() {
+        if (this.hoveredEntity) {
+            this.hoveredEntity.isHovered = false;
+            this.hoveredEntity = null;
+        }
     }
     
     // Get the current player's team
@@ -83,6 +93,7 @@ class InputHandler {
         this.updateKeyboardInput(deltaTime);
         this.updateEdgeScrolling(deltaTime);
         this.updateMovementTargets();
+        this.updateAttackFeedbacks();
     }
     
     updateKeyboardInput(deltaTime) {
@@ -127,7 +138,7 @@ class InputHandler {
         e.preventDefault();
         
         this.updateMousePosition(e);
-        this.updateWorldMousePosition(); // Fix: Update world coordinates too
+        this.updateWorldMousePosition(); // Update world coordinates with zoom
         this.isMouseDown = true;
         this.dragStart = this.mousePos.clone();
         this.multiSelect = e.ctrlKey || e.shiftKey;
@@ -141,7 +152,7 @@ class InputHandler {
     
     onMouseMove(e) {
         this.updateMousePosition(e);
-        this.updateWorldMousePosition(); // Update world coordinates on mouse move too
+        this.updateWorldMousePosition(); // Update world coordinates with current zoom
         
         // Check for building hover and update cursor
         this.updateCursorForBuildingHover();
@@ -165,15 +176,41 @@ class InputHandler {
             return;
         }
         
-        // Check if mouse is over a building (using small radius for point detection)
-        const entitiesAtMouse = this.engine.getEntitiesNear(this.worldMousePos, 10);
-        const buildingsAtMouse = entitiesAtMouse.filter(entity => 
-            entity.type === 'building' || entity instanceof Building
-        );
+        // Check if mouse is over any entity (using larger radius for hover detection)
+        const hoverRadius = 35; // Increased hover range
+        const entitiesAtMouse = this.engine.getEntitiesNear(this.worldMousePos, hoverRadius);
         
-        if (buildingsAtMouse.length > 0) {
-            // Change cursor to pointer when hovering over buildings
-            this.canvas.style.cursor = 'pointer';
+        // Clear previous hover states
+        if (this.hoveredEntity) {
+            this.hoveredEntity.isHovered = false;
+        }
+        this.hoveredEntity = null;
+        
+        // Find the closest entity to hover
+        if (entitiesAtMouse.length > 0) {
+            let closestEntity = null;
+            let closestDistance = Infinity;
+            
+            entitiesAtMouse.forEach(entity => {
+                const distance = this.worldMousePos.distance(entity.position);
+                if (distance < closestDistance) {
+                    closestDistance = distance;
+                    closestEntity = entity;
+                }
+            });
+            
+            // Set hover state on closest entity
+            if (closestEntity) {
+                closestEntity.isHovered = true;
+                this.hoveredEntity = closestEntity;
+                
+                // Change cursor based on entity type
+                if (closestEntity.type === 'building' || closestEntity instanceof Building) {
+                    this.canvas.style.cursor = 'pointer';
+                } else {
+                    this.canvas.style.cursor = 'crosshair';
+                }
+            }
         } else {
             // Reset to default cursor
             this.canvas.style.cursor = 'crosshair';
@@ -202,10 +239,13 @@ class InputHandler {
         const zoomDirection = e.deltaY > 0 ? -1 : 1;
         const oldZoom = this.engine.camera.zoom;
         
+        // Get dynamic zoom limits based on map size and canvas size
+        const zoomLimits = this.engine.getZoomLimits();
+        
         // Use multiplicative scaling for more natural feel
         const newZoom = MathUtils.clamp(
             zoomDirection > 0 ? oldZoom * zoomFactor : oldZoom / zoomFactor,
-            0.5, 3.0
+            zoomLimits.min, zoomLimits.max
         );
         
         if (Math.abs(oldZoom - newZoom) < 0.001) return; // No significant zoom change
@@ -226,16 +266,26 @@ class InputHandler {
         this.engine.camera.x += deltaX;
         this.engine.camera.y += deltaY;
         
-        // Clamp camera to bounds
+        // Clamp camera to keep it within world bounds
+        const viewWidth = this.engine.canvas.width / this.engine.camera.zoom;
+        const viewHeight = this.engine.canvas.height / this.engine.camera.zoom;
+        
+        // Camera position represents top-left of viewport
+        // Keep camera strictly within world bounds
+        const maxX = Math.max(0, this.engine.worldWidth - viewWidth);
+        const maxY = Math.max(0, this.engine.worldHeight - viewHeight);
+        const minX = 0;
+        const minY = 0;
+        
         this.engine.camera.x = MathUtils.clamp(
             this.engine.camera.x,
-            this.engine.camera.bounds.minX,
-            this.engine.camera.bounds.maxX - this.engine.canvas.width / this.engine.camera.zoom
+            minX,
+            maxX
         );
         this.engine.camera.y = MathUtils.clamp(
             this.engine.camera.y,
-            this.engine.camera.bounds.minY,
-            this.engine.camera.bounds.maxY - this.engine.canvas.height / this.engine.camera.zoom
+            minY,
+            maxY
         );
     }
     
@@ -293,6 +343,8 @@ class InputHandler {
                 this.engine.clearSelection();
                 this.clearUnitSelection();
             }
+            // Clear hover state when clicking on empty space
+            this.clearHoverState();
         }
     }
     
@@ -321,7 +373,7 @@ class InputHandler {
             } else {
                 // Move command
                 this.commandSelectedUnits('move', this.worldMousePos);
-                console.log(`Move command issued to ${this.worldMousePos.x}, ${this.worldMousePos.y}`);
+                console.log(`Move command issued to (${this.worldMousePos.x.toFixed(1)}, ${this.worldMousePos.y.toFixed(1)}) at zoom ${this.engine.camera.zoom.toFixed(2)}`);
             }
         }
     }
@@ -341,9 +393,14 @@ class InputHandler {
                     // Exit building placement mode if active
                     this.game.exitBuildingPlacement();
                 } else {
-                    // Normal deselect behavior
-                    this.engine.clearSelection();
-                    this.clearUnitSelection();
+                    // In single player, show settings modal on ESC
+                    if (typeof showSettingsModal === 'function') {
+                        showSettingsModal();
+                    } else {
+                        // Fallback to normal deselect behavior
+                        this.engine.clearSelection();
+                        this.clearUnitSelection();
+                    }
                 }
                 break;
             case 'delete':
@@ -358,9 +415,12 @@ class InputHandler {
     updateMousePosition(e) {
         const rect = this.canvas.getBoundingClientRect();
         
-        // Simple coordinate calculation without DPR scaling
-        this.mousePos.x = e.clientX - rect.left;
-        this.mousePos.y = e.clientY - rect.top;
+        // Account for canvas scaling and device pixel ratio
+        const scaleX = this.canvas.width / rect.width;
+        const scaleY = this.canvas.height / rect.height;
+        
+        this.mousePos.x = (e.clientX - rect.left) * scaleX;
+        this.mousePos.y = (e.clientY - rect.top) * scaleY;
     }
     
     updateSelectionBox() {
@@ -460,6 +520,9 @@ class InputHandler {
                 });
                 break;
             case 'attack':
+                // Add visual feedback for attack command
+                this.addAttackFeedback(target);
+                
                 playerUnits.forEach(unit => {
                     unit.attackUnit(target);
                     
@@ -524,6 +587,38 @@ class InputHandler {
         this.movementTargets = this.movementTargets.filter(target => 
             currentTime - target.timestamp < this.movementIndicatorDuration
         );
+    }
+    
+    addAttackFeedback(target) {
+        // Add visual feedback that shows we're attacking this target
+        if (!this.attackFeedbacks) {
+            this.attackFeedbacks = [];
+        }
+        
+        this.attackFeedbacks.push({
+            target: target,
+            position: target.position.clone(),
+            timestamp: Date.now(),
+            intensity: 1.0 // For fading effect
+        });
+    }
+    
+    updateAttackFeedbacks() {
+        if (!this.attackFeedbacks) return;
+        
+        const currentTime = Date.now();
+        const feedbackDuration = 1000; // 1 second
+        
+        this.attackFeedbacks = this.attackFeedbacks.filter(feedback => {
+            const elapsed = currentTime - feedback.timestamp;
+            if (elapsed >= feedbackDuration) {
+                return false; // Remove expired feedback
+            }
+            
+            // Update intensity for fading effect
+            feedback.intensity = 1.0 - (elapsed / feedbackDuration);
+            return true;
+        });
     }
     
     clearUnitSelection() {
@@ -595,6 +690,9 @@ class InputHandler {
         // Render movement target indicators
         this.renderMovementTargets(ctx);
         
+        // Render attack feedback indicators
+        this.renderAttackFeedbacks(ctx);
+        
         // Debug: render mouse crosshair in world space
         if (this.engine.showDebug && this.worldMousePos) {
             ctx.strokeStyle = '#ff00ff';
@@ -662,6 +760,48 @@ class InputHandler {
                     ctx.lineTo(arrowX - Math.cos(angle - 0.5) * arrowLength * 0.6, arrowY - Math.sin(angle - 0.5) * arrowLength * 0.6);
                     ctx.stroke();
                 }
+                
+                ctx.restore();
+            }
+        });
+    }
+    
+    renderAttackFeedbacks(ctx) {
+        if (!this.attackFeedbacks) return;
+        
+        this.attackFeedbacks.forEach(feedback => {
+            if (feedback.intensity > 0) {
+                // Convert world position to screen position
+                const screenPos = this.engine.worldToScreen(feedback.position.x, feedback.position.y);
+                
+                ctx.save();
+                
+                // Red pulsing effect with cross-hairs
+                const alpha = feedback.intensity;
+                const size = 20 + (1 - feedback.intensity) * 10; // Expands as it fades
+                
+                // Red cross-hairs indicating attack target
+                ctx.strokeStyle = `rgba(255, 0, 0, ${alpha})`;
+                ctx.lineWidth = 3;
+                ctx.beginPath();
+                
+                // Horizontal line
+                ctx.moveTo(screenPos.x - size, screenPos.y);
+                ctx.lineTo(screenPos.x + size, screenPos.y);
+                
+                // Vertical line
+                ctx.moveTo(screenPos.x, screenPos.y - size);
+                ctx.lineTo(screenPos.x, screenPos.y + size);
+                
+                ctx.stroke();
+                
+                // Optional: Add a pulsing circle
+                const pulseRadius = 15 + Math.sin(Date.now() * 0.01) * 5;
+                ctx.strokeStyle = `rgba(255, 100, 100, ${alpha * 0.5})`;
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.arc(screenPos.x, screenPos.y, pulseRadius, 0, Math.PI * 2);
+                ctx.stroke();
                 
                 ctx.restore();
             }

@@ -54,7 +54,7 @@ body {
     text-align: center;
 }
 
-/* Top Resource Bar - clean minimal design */
+/* Top Resource Bar - clean minimal design with high z-index */
 .top-bar {
     position: absolute;
     top: 20px;
@@ -70,7 +70,7 @@ body {
     box-shadow: none;
     min-width: auto;
     pointer-events: none;
-    z-index: 100;
+    z-index: 150;
 }
 
 #resourceDisplay {
@@ -141,12 +141,13 @@ body {
     box-shadow: 0 0 10px rgba(0, 212, 255, 0.5);
 }
 
-/* Minimap Panel - moved to top-right */
+/* Minimap Panel - positioned to avoid buttons */
 .minimap-panel {
     top: 20px;
     right: 20px;
     padding: 8px;
     width: 220px;
+    z-index: 15;
 }
 
 #minimapCanvas {
@@ -159,6 +160,30 @@ body {
 
 #minimapCanvas:hover {
     box-shadow: 0 0 15px rgba(0, 212, 255, 0.6);
+}
+
+/* Enemy Base Counter */
+.enemy-counter {
+    margin-top: 8px;
+    padding: 8px;
+    background: linear-gradient(135deg, rgba(255, 100, 100, 0.2), rgba(200, 50, 50, 0.2));
+    border: 1px solid rgba(255, 100, 100, 0.5);
+    border-radius: 4px;
+    text-align: center;
+}
+
+.counter-label {
+    font-size: 10px;
+    color: #ffcccc;
+    margin-bottom: 4px;
+    font-weight: bold;
+}
+
+.counter-value {
+    font-size: 16px;
+    color: #ff6666;
+    font-weight: bold;
+    font-family: 'Courier New', monospace;
 }
 
 /* Building Queue Panel */
@@ -234,12 +259,14 @@ body {
 
 /* Selection Card (bottom center) */
 .selection-card {
-    bottom: 20px;
-    left: 50%;
-    transform: translateX(-50%);
+    position: fixed !important;
+    bottom: 20px !important;
+    left: 50% !important;
+    transform: translateX(-50%) !important;
     padding: 16px;
     min-width: 400px;
     animation: slideUpIn 0.3s ease-out;
+    z-index: 20;
 }
 
 @keyframes slideUpIn {
@@ -313,13 +340,14 @@ body {
     background: rgba(0, 212, 255, 0.2);
 }
 
-/* Command Panel (bottom right) */
+/* Command Panel (bottom right) with proper z-index */
 .command-panel {
     bottom: 20px;
     right: 20px;
     padding: 16px;
     width: 300px;
     max-height: 450px;
+    z-index: 20;
 }
 
 .command-tabs {
@@ -499,7 +527,7 @@ body {
     
     .selection-card {
         min-width: 300px;
-        bottom: 80px;
+        bottom: 20px !important;
     }
 }
 
@@ -911,6 +939,71 @@ body {
     15%, 85% { opacity: 1; transform: translateX(0); }
 }
 
+/* Game Settings Modal */
+.time-section {
+    background: linear-gradient(135deg, rgba(0, 212, 255, 0.1), rgba(0, 150, 200, 0.1));
+    border: 1px solid rgba(0, 212, 255, 0.3);
+    border-radius: 6px;
+    padding: 12px;
+    margin-bottom: 15px;
+}
+
+.time-elapsed {
+    text-align: center;
+    font-size: 18px;
+    font-weight: bold;
+}
+
+.time-label {
+    color: #00d4ff;
+    margin-right: 10px;
+}
+
+.time-value {
+    color: #ffffff;
+    font-family: 'Courier New', monospace;
+    font-size: 20px;
+}
+
+.settings-info {
+    background: rgba(0, 0, 0, 0.3);
+    padding: 15px;
+    border-radius: 6px;
+    border-left: 3px solid #00d4ff;
+}
+
+.settings-info p {
+    margin: 8px 0;
+    color: #e0e0e0;
+    font-size: 14px;
+}
+
+.settings-info strong {
+    color: #00d4ff;
+}
+
+.settings-controls {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.settings-controls .modal-btn {
+    flex: 1;
+    min-width: 180px;
+}
+
+.settings-controls .exit-btn {
+    background: linear-gradient(135deg, #cc2936, #aa1f2b);
+    border: 2px solid #ff4757;
+}
+
+.settings-controls .exit-btn:hover {
+    background: linear-gradient(135deg, #ff3742, #cc2936);
+    border-color: #ff6b7a;
+    transform: translateY(-2px);
+}
+
 /* Leave Game Modal */
 .modal-overlay {
     position: fixed;
@@ -998,4 +1091,429 @@ body {
     background: #555;
     color: white;
     transform: scale(1.02);
+}
+
+/* =======================
+   SINGLE PLAYER STYLES
+   ======================= */
+
+/* Single Player Specific Styles */
+.campaign-info {
+    text-align: left;
+    margin-bottom: 24px;
+}
+
+.campaign-info h2 {
+    color: #00d4ff;
+    margin-bottom: 16px;
+    font-size: 1.8em;
+    text-align: center;
+}
+
+.campaign-info p {
+    color: #ccc;
+    line-height: 1.6;
+    margin-bottom: 24px;
+    font-size: 1.1em;
+}
+
+.mission-objectives {
+    background: rgba(0, 0, 0, 0.3);
+    border: 1px solid rgba(0, 212, 255, 0.3);
+    border-radius: 8px;
+    padding: 20px;
+    margin-bottom: 24px;
+}
+
+.mission-objectives h3 {
+    color: #00d4ff;
+    margin-bottom: 12px;
+}
+
+.mission-objectives ul {
+    list-style: none;
+    padding: 0;
+}
+
+.mission-objectives li {
+    padding: 8px 0;
+    color: #ccc;
+    font-size: 1em;
+}
+
+/* Difficulty Selection */
+.difficulty-selection {
+    margin-bottom: 24px;
+}
+
+.difficulty-selection h3 {
+    color: #00d4ff;
+    margin-bottom: 16px;
+    text-align: center;
+}
+
+.difficulty-buttons {
+    display: flex;
+    gap: 16px;
+    justify-content: center;
+    flex-wrap: wrap;
+}
+
+.difficulty-btn {
+    background: linear-gradient(135deg, rgba(30, 30, 50, 0.8), rgba(50, 50, 80, 0.8));
+    border: 2px solid rgba(100, 100, 150, 0.5);
+    border-radius: 12px;
+    color: #fff;
+    cursor: pointer;
+    padding: 16px;
+    width: 180px;
+    transition: all 0.3s ease;
+}
+
+.difficulty-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 16px rgba(0, 212, 255, 0.3);
+    border-color: rgba(0, 212, 255, 0.6);
+}
+
+.difficulty-btn.selected {
+    border-color: #00d4ff;
+    background: linear-gradient(135deg, rgba(0, 212, 255, 0.2), rgba(0, 150, 200, 0.2));
+    box-shadow: 0 0 20px rgba(0, 212, 255, 0.4);
+}
+
+.difficulty-icon {
+    font-size: 2em;
+    margin-bottom: 8px;
+}
+
+.difficulty-name {
+    font-weight: bold;
+    margin-bottom: 4px;
+    color: #00d4ff;
+}
+
+.difficulty-desc {
+    font-size: 0.9em;
+    color: #aaa;
+}
+
+/* Easy/Hard specific colors */
+.easy-btn.selected {
+    border-color: #4CAF50;
+    background: linear-gradient(135deg, rgba(76, 175, 80, 0.2), rgba(67, 160, 71, 0.2));
+    box-shadow: 0 0 20px rgba(76, 175, 80, 0.4);
+}
+
+.hard-btn.selected {
+    border-color: #f44336;
+    background: linear-gradient(135deg, rgba(244, 67, 54, 0.2), rgba(229, 57, 53, 0.2));
+    box-shadow: 0 0 20px rgba(244, 67, 54, 0.4);
+}
+
+.legendary-btn.selected {
+    border-color: #9c27b0;
+    background: linear-gradient(135deg, rgba(156, 39, 176, 0.3), rgba(142, 36, 170, 0.3));
+    box-shadow: 0 0 25px rgba(156, 39, 176, 0.6);
+    animation: legendary-pulse 2s infinite;
+}
+
+@keyframes legendary-pulse {
+    0%, 100% { 
+        box-shadow: 0 0 25px rgba(156, 39, 176, 0.6); 
+        transform: scale(1);
+    }
+    50% { 
+        box-shadow: 0 0 35px rgba(156, 39, 176, 0.8); 
+        transform: scale(1.02);
+    }
+}
+
+/* Player Setup */
+.player-setup {
+    margin-bottom: 24px;
+}
+
+/* Mission Briefing */
+.briefing-content {
+    display: flex;
+    gap: 32px;
+    align-items: center;
+}
+
+.briefing-text {
+    flex: 2;
+    text-align: left;
+}
+
+.briefing-text h4 {
+    color: #00d4ff;
+    margin-bottom: 8px;
+}
+
+.briefing-text ul {
+    margin-bottom: 16px;
+    padding-left: 20px;
+}
+
+.briefing-text li {
+    margin-bottom: 4px;
+    color: #ccc;
+}
+
+.countdown-display {
+    flex: 1;
+    text-align: center;
+    background: rgba(0, 0, 0, 0.5);
+    border: 2px solid rgba(0, 212, 255, 0.5);
+    border-radius: 12px;
+    padding: 24px;
+}
+
+.countdown-text {
+    color: #00d4ff;
+    font-size: 1.2em;
+    margin-bottom: 12px;
+}
+
+.countdown-number {
+    font-size: 4em;
+    font-weight: bold;
+    color: #fff;
+    text-shadow: 0 0 20px rgba(0, 212, 255, 0.8);
+}
+
+/* Mission Status in Game */
+.mission-status {
+    display: flex;
+    gap: 24px;
+    align-items: center;
+}
+
+.status-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.status-label {
+    color: #aaa;
+    font-size: 0.9em;
+}
+
+.status-value {
+    color: #00d4ff;
+    font-weight: bold;
+}
+
+/* Game Settings Button */
+.game-settings {
+    position: absolute;
+    top: 20px;
+    right: 20px;
+    z-index: 200;
+}
+
+.settings-btn {
+    background: rgba(0, 0, 0, 0.8);
+    border: 2px solid rgba(0, 212, 255, 0.6);
+    border-radius: 8px;
+    color: #00d4ff;
+    font-size: 18px;
+    padding: 8px 12px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    backdrop-filter: blur(5px);
+    box-shadow: 0 2px 8px rgba(0, 212, 255, 0.3);
+}
+
+.settings-btn:hover {
+    background: rgba(0, 212, 255, 0.2);
+    border-color: rgba(0, 212, 255, 1);
+    box-shadow: 0 4px 15px rgba(0, 212, 255, 0.5);
+    transform: translateY(-1px);
+}
+
+/* Mission Result Modal */
+.mission-result-modal {
+    background: linear-gradient(135deg, rgba(22, 33, 62, 0.98), rgba(15, 52, 96, 0.98));
+    border: 3px solid rgba(0, 212, 255, 0.8);
+    border-radius: 16px;
+    backdrop-filter: blur(20px);
+    box-shadow: 0 12px 48px rgba(0, 212, 255, 0.4);
+    max-width: 600px;
+    width: 90%;
+    text-align: center;
+}
+
+.mission-result-modal .modal-content {
+    padding: 32px;
+}
+
+.mission-result-modal h2 {
+    color: #00d4ff;
+    font-size: 2.5em;
+    margin-bottom: 24px;
+    text-shadow: 0 0 20px rgba(0, 212, 255, 0.6);
+}
+
+.result-icon {
+    font-size: 4em;
+    margin-bottom: 16px;
+}
+
+.result-message {
+    font-size: 1.3em;
+    color: #ccc;
+    margin-bottom: 32px;
+    line-height: 1.4;
+}
+
+.result-stats {
+    background: rgba(0, 0, 0, 0.3);
+    border: 1px solid rgba(0, 212, 255, 0.3);
+    border-radius: 8px;
+    padding: 20px;
+    margin-bottom: 32px;
+    display: grid;
+    gap: 12px;
+}
+
+.stat-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.stat-label {
+    color: #aaa;
+}
+
+.stat-value {
+    color: #00d4ff;
+    font-weight: bold;
+    font-size: 1.1em;
+}
+
+.result-actions {
+    display: flex;
+    gap: 16px;
+    justify-content: center;
+}
+
+/* Campaign Actions */
+.campaign-actions {
+    display: flex;
+    gap: 16px;
+    justify-content: center;
+    flex-wrap: wrap;
+}
+
+/* Game Mode Selection */
+.game-mode-selection {
+    margin-bottom: 24px;
+}
+
+.game-mode-selection h2 {
+    color: #00d4ff;
+    margin-bottom: 24px;
+    font-size: 1.8em;
+    text-align: center;
+}
+
+.mode-buttons {
+    display: flex;
+    gap: 24px;
+    justify-content: center;
+    flex-wrap: wrap;
+    margin-bottom: 24px;
+}
+
+.mode-btn {
+    background: linear-gradient(135deg, rgba(30, 30, 50, 0.8), rgba(50, 50, 80, 0.8));
+    border: 2px solid rgba(100, 100, 150, 0.5);
+    border-radius: 12px;
+    color: #fff;
+    cursor: pointer;
+    padding: 24px;
+    width: 200px;
+    transition: all 0.3s ease;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    gap: 8px;
+}
+
+.mode-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 16px rgba(0, 212, 255, 0.3);
+    border-color: rgba(0, 212, 255, 0.6);
+}
+
+.mode-btn.primary {
+    border-color: #00d4ff;
+    background: linear-gradient(135deg, rgba(0, 212, 255, 0.2), rgba(0, 150, 200, 0.2));
+}
+
+.mode-btn.secondary {
+    border-color: rgba(100, 150, 100, 0.5);
+    background: linear-gradient(135deg, rgba(50, 80, 50, 0.2), rgba(70, 100, 70, 0.2));
+}
+
+.mode-icon {
+    font-size: 3em;
+    margin-bottom: 8px;
+}
+
+.mode-title {
+    font-weight: bold;
+    font-size: 1.2em;
+    color: #00d4ff;
+    margin-bottom: 4px;
+}
+
+.mode-desc {
+    font-size: 0.9em;
+    color: #aaa;
+}
+
+.multiplayer-section {
+    margin-top: 24px;
+}
+
+/* Responsive Design for Single Player */
+@media (max-width: 768px) {
+    .difficulty-buttons {
+        flex-direction: column;
+        align-items: center;
+    }
+    
+    .difficulty-btn {
+        width: 240px;
+    }
+    
+    .campaign-actions {
+        flex-direction: column;
+        align-items: center;
+    }
+    
+    .briefing-content {
+        flex-direction: column;
+    }
+    
+    .countdown-number {
+        font-size: 3em;
+    }
+}
+
+@media (max-width: 480px) {
+    .difficulty-btn {
+        width: 200px;
+        padding: 12px;
+    }
+    
+    .countdown-number {
+        font-size: 2.5em;
+    }
 }

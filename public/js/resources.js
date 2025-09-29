@@ -90,13 +90,36 @@ class ResourceManager {
     
     updatePopulation() {
         if (!window.game || !window.game.engine) return;
-        
+
         const playerTeam = window.game.playerTeam || 'player';
+        
+        // Count existing units
         const units = window.game.engine.entities.filter(entity => 
             entity instanceof Unit && entity.team === playerTeam && !entity.isDead
         );
+        const unitPopulation = units.reduce((total, unit) => total + (unit.populationCost || 1), 0);
         
-        this.currentPopulation = units.reduce((total, unit) => total + (unit.populationCost || 1), 0);
+        // Count queued units from all buildings
+        const buildings = window.game.engine.entities.filter(entity => 
+            entity instanceof Building && entity.team === playerTeam && !entity.isDead
+        );
+        
+        let queuedPopulation = 0;
+        buildings.forEach(building => {
+            // Count units in production queue
+            if (building.productionQueue && Array.isArray(building.productionQueue)) {
+                queuedPopulation += building.productionQueue.reduce((total, item) => {
+                    return total + (item.cost && item.cost.population ? item.cost.population : 0);
+                }, 0);
+            }
+            
+            // Count current production
+            if (building.currentProduction && building.currentProduction.cost && building.currentProduction.cost.population) {
+                queuedPopulation += building.currentProduction.cost.population;
+            }
+        });
+
+        this.currentPopulation = unitPopulation + queuedPopulation;
     }
     
     updateUI() {
