@@ -338,7 +338,6 @@ class Unit {
                     });
                 }
                 
-                console.log(`${this.constructor.name} engaging enemy during attack-move: ${closestEnemy.constructor.name}`);
                 return;
             }
         }
@@ -362,12 +361,12 @@ class Unit {
             this.velocity = this.velocity.add(acceleration.multiply(deltaTime / 1000));
             
             // Limit speed
-            if (this.velocity.magnitude() > this.maxSpeed) {
+            if (this.velocity.length() > this.maxSpeed) {
                 this.velocity = this.velocity.normalize().multiply(this.maxSpeed);
             }
             
             // Update rotation to face movement direction
-            if (this.velocity.magnitude() > 0.1) {
+            if (this.velocity.length() > 0.1) {
                 this.rotation = Math.atan2(this.velocity.y, this.velocity.x);
             }
         }
@@ -829,6 +828,7 @@ class Scorpion extends Unit {
 // Unit factory
 const UnitFactory = {
     create: (type, x, y, team = 'player') => {
+        if (!type) return null;
         switch (type.toLowerCase()) {
             case 'marine':
                 return new Marine(x, y, team);
@@ -842,7 +842,9 @@ const UnitFactory = {
     },
     
     getUnitCost: (type) => {
+        if (!type) return { supplies: 0, power: 0, population: 0, buildTime: 0 };
         const tempUnit = UnitFactory.create(type, 0, 0);
+        if (!tempUnit) return { supplies: 0, power: 0, population: 0, buildTime: 0 };
         return {
             supplies: tempUnit.supplyCost,
             power: tempUnit.powerCost,

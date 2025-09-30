@@ -128,7 +128,7 @@ class AIOpponent {
     }
     
     initializeLegendaryBase(aiIndex) {
-        console.log(`Initializing minimal legendary AI base ${aiIndex} for team ${this.team}...`);
+        console.log(`Initializing enhanced legendary AI base ${aiIndex} for team ${this.team}...`);
         
         // Position AI bases in a circle around the center of the 5000x5000 map
         const centerX = 2500;
@@ -147,26 +147,23 @@ class AIOpponent {
         this.basePosition = { x: baseX, y: baseY };
         this.baseId = `ai_base_${this.team}_${aiIndex}_${Date.now()}`;
         
-        // Create AI base (HQ only)
+        // Create AI base (HQ)
         const base = BuildingFactory.create('base', baseX, baseY, this.team);
         base.id = this.baseId;
         base.isUnderConstruction = false;
         window.game.engine.addEntity(base);
         
-        // Create just one supply depot to start
-        const supply = BuildingFactory.create('supply', baseX + 100, baseY, this.team);
-        supply.id = `ai_supply_${this.team}_${aiIndex}_${Date.now()}`;
-        supply.isUnderConstruction = false;
-        window.game.engine.addEntity(supply);
+        // Create full base infrastructure with 2 of each building
+        this.createFullBaseInfrastructure(baseX, baseY, aiIndex);
         
-        // Start with basic resources - let them build up gradually
+        // Start with moderate resources for enhanced base
         this.resources = {
-            credits: 500,
-            energy: 100,
-            materials: 200
+            credits: 1000,
+            energy: 200,
+            materials: 400
         };
         
-        console.log(`Minimal legendary AI base ${aiIndex} initialized at (${baseX.toFixed(0)}, ${baseY.toFixed(0)}) - just HQ and supply depot`);
+        console.log(`Enhanced legendary AI base ${aiIndex} initialized at (${baseX.toFixed(0)}, ${baseY.toFixed(0)}) with full infrastructure`);
     }
     
     spawnLegendaryInitialUnits(baseX, baseY) {
@@ -186,6 +183,139 @@ class AIOpponent {
             // Assign initial defenders
             this.tactics.baseDefenders.push(unit);
         });
+    }
+    
+    initializeSuperNovaBase(aiIndex) {
+        console.log(`Initializing enhanced Super Nova AI base ${aiIndex} for team ${this.team}...`);
+        
+        // Position AI bases randomly across the 6000x6000 map, but not too close to center
+        const centerX = 3000;
+        const centerY = 3000;
+        const minRadius = 1200; // Increased minimum distance from center for proper spacing
+        const maxRadius = 2700; // Reduced maximum to ensure they fit in map
+        
+        // Generate position with collision checking
+        let baseX, baseY, attempts = 0;
+        do {
+            const angle = Math.random() * Math.PI * 2;
+            const radius = minRadius + Math.random() * (maxRadius - minRadius);
+            baseX = centerX + Math.cos(angle) * radius;
+            baseY = centerY + Math.sin(angle) * radius;
+            attempts++;
+        } while (this.checkBaseOverlap(baseX, baseY, 600) && attempts < 50); // 600 unit minimum distance
+        
+        console.log(`Super Nova AI ${aiIndex} positioned at (${baseX.toFixed(0)}, ${baseY.toFixed(0)}) after ${attempts} attempts`);
+        
+        // Store this AI's base position for future building placement
+        this.basePosition = { x: baseX, y: baseY };
+        this.baseId = `supernova_base_${this.team}_${aiIndex}_${Date.now()}`;
+        
+        // Create AI base (HQ)
+        const base = BuildingFactory.create('base', baseX, baseY, this.team);
+        base.id = this.baseId;
+        base.isUnderConstruction = false;
+        window.game.engine.addEntity(base);
+        
+        // Create full base infrastructure with 2 of each building
+        this.createFullBaseInfrastructure(baseX, baseY, aiIndex);
+        
+        // Start with moderate resources for Super Nova mode
+        this.resources = {
+            credits: 600,
+            energy: 150,
+            materials: 300
+        };
+        
+        console.log(`Enhanced Super Nova AI base ${aiIndex} initialized at (${baseX.toFixed(0)}, ${baseY.toFixed(0)}) with full infrastructure`);
+    }
+    
+    createFullBaseInfrastructure(baseX, baseY, aiIndex) {
+        console.log(`Creating full infrastructure for AI base ${aiIndex}...`);
+        
+        // Define building positions in a grid around the base
+        const buildingSpacing = 120;
+        const buildingPositions = [
+            // Row 1 (top)
+            { x: baseX - buildingSpacing, y: baseY - buildingSpacing },
+            { x: baseX + buildingSpacing, y: baseY - buildingSpacing },
+            // Row 2 (sides)
+            { x: baseX - buildingSpacing * 1.5, y: baseY },
+            { x: baseX + buildingSpacing * 1.5, y: baseY },
+            // Row 3 (bottom)
+            { x: baseX - buildingSpacing, y: baseY + buildingSpacing },
+            { x: baseX + buildingSpacing, y: baseY + buildingSpacing },
+            // Row 4 (outer ring)
+            { x: baseX, y: baseY - buildingSpacing * 1.5 },
+            { x: baseX, y: baseY + buildingSpacing * 1.5 }
+        ];
+        
+        let posIndex = 0;
+        
+        // Create 2 supply depots
+        for (let i = 0; i < 2; i++) {
+            const pos = buildingPositions[posIndex++];
+            const supply = BuildingFactory.create('supply', pos.x, pos.y, this.team);
+            supply.id = `ai_supply_${this.team}_${aiIndex}_${i}_${Date.now()}`;
+            supply.isUnderConstruction = false;
+            window.game.engine.addEntity(supply);
+        }
+        
+        // Create 2 reactors
+        for (let i = 0; i < 2; i++) {
+            const pos = buildingPositions[posIndex++];
+            const reactor = BuildingFactory.create('reactor', pos.x, pos.y, this.team);
+            reactor.id = `ai_reactor_${this.team}_${aiIndex}_${i}_${Date.now()}`;
+            reactor.isUnderConstruction = false;
+            window.game.engine.addEntity(reactor);
+        }
+        
+        // Create 2 barracks
+        for (let i = 0; i < 2; i++) {
+            const pos = buildingPositions[posIndex++];
+            const barracks = BuildingFactory.create('barracks', pos.x, pos.y, this.team);
+            barracks.id = `ai_barracks_${this.team}_${aiIndex}_${i}_${Date.now()}`;
+            barracks.isUnderConstruction = false;
+            window.game.engine.addEntity(barracks);
+        }
+        
+        // Create 2 turrets
+        for (let i = 0; i < 2; i++) {
+            const pos = buildingPositions[posIndex++];
+            const turret = BuildingFactory.create('turret', pos.x, pos.y, this.team);
+            turret.id = `ai_turret_${this.team}_${aiIndex}_${i}_${Date.now()}`;
+            turret.isUnderConstruction = false;
+            window.game.engine.addEntity(turret);
+        }
+        
+        console.log(`Created full infrastructure: 2 supply depots, 2 reactors, 2 barracks, 2 turrets for AI base ${aiIndex}`);
+    }
+    
+    checkBaseOverlap(newX, newY, minDistance) {
+        // Check against player base position
+        const playerBaseX = this.team === 'enemy' ? 3000 : 2500; // Adjust based on mode
+        const playerBaseY = this.team === 'enemy' ? 3000 : 2500;
+        
+        const distToPlayer = Math.sqrt((newX - playerBaseX) ** 2 + (newY - playerBaseY) ** 2);
+        if (distToPlayer < minDistance) {
+            return true; // Too close to player
+        }
+        
+        // Check against existing AI bases (if any exist)
+        if (window.game && window.game.engine) {
+            const existingBases = window.game.engine.entities.filter(entity => 
+                entity.constructor.name === 'Base' && 
+                entity.team === this.team
+            );
+            
+            for (const base of existingBases) {
+                const dist = Math.sqrt((newX - base.position.x) ** 2 + (newY - base.position.y) ** 2);
+                if (dist < minDistance) {
+                    return true; // Too close to existing AI base
+                }
+            }
+        }
+        
+        return false; // No overlap
     }
     
     start() {

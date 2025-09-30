@@ -457,8 +457,11 @@ class GameEngine {
     }
     
     renderMinimap() {
-        const minimapCanvas = document.getElementById('minimapCanvas');
+        const minimapCanvas = document.getElementById('minimap');
+        if (!minimapCanvas) return; // Skip if minimap canvas not found
+        
         const minimapCtx = minimapCanvas.getContext('2d');
+        if (!minimapCtx) return; // Skip if context not available
         
         // Clear minimap
         minimapCtx.clearRect(0, 0, minimapCanvas.width, minimapCanvas.height);

@@ -134,7 +134,7 @@ class Game {
         });
         
         // Minimap interaction (click and drag)
-        const minimapCanvas = document.getElementById('minimapCanvas');
+        const minimapCanvas = document.getElementById('minimap');
         if (minimapCanvas) {
             // Initialize minimap interaction state
             this.minimapInteraction = {
@@ -197,7 +197,7 @@ class Game {
     }
     
     initializeMinimap() {
-        const minimapCanvas = document.getElementById('minimapCanvas');
+        const minimapCanvas = document.getElementById('minimap');
         if (!minimapCanvas) {
             console.warn('Minimap canvas not found');
             return;
@@ -1221,6 +1221,11 @@ class Game {
     isValidBuildingPosition(position, buildingType) {
         const tempBuilding = BuildingFactory.create(buildingType, position.x, position.y);
         
+        // Check base range restrictions - buildings must be within range of a friendly base
+        if (!this.isWithinBaseRange(position, this.playerTeam)) {
+            return false;
+        }
+        
         // Check for overlaps with existing buildings using rectangular collision
         const buildings = this.engine.entities.filter(entity => entity instanceof Building && !entity.isDead);
         
@@ -1258,6 +1263,31 @@ class Game {
                position.x + halfWidth <= this.engine.worldWidth &&
                position.y - halfHeight >= 0 &&
                position.y + halfHeight <= this.engine.worldHeight;
+    }
+    
+    isWithinBaseRange(position, team) {
+        const baseRange = 400; // Range in which buildings can be built around a base
+        
+        // Find all friendly bases
+        const friendlyBases = this.engine.entities.filter(entity => 
+            entity.constructor.name === 'Base' && 
+            entity.team === team && 
+            !entity.isDead
+        );
+        
+        // Check if position is within range of any friendly base
+        for (const base of friendlyBases) {
+            const distance = Math.sqrt(
+                (position.x - base.position.x) ** 2 + 
+                (position.y - base.position.y) ** 2
+            );
+            
+            if (distance <= baseRange) {
+                return true;
+            }
+        }
+        
+        return false; // Not within range of any friendly base
     }
     
     exitBuildingPlacement() {
@@ -1439,6 +1469,9 @@ class Game {
         
         const isValid = this.isValidBuildingPosition(worldPos, this.buildingToPlace);
         
+        // Render base range circles for all friendly bases
+        this.renderBaseRanges(ctx);
+        
         const tempBuilding = BuildingFactory.create(this.buildingToPlace, worldPos.x, worldPos.y);
         
         // Convert world position to screen position for accurate rendering
@@ -1464,6 +1497,34 @@ class Game {
             tempBuilding.width * this.engine.camera.zoom,
             tempBuilding.height * this.engine.camera.zoom
         );
+        
+        ctx.restore();
+    }
+    
+    renderBaseRanges(ctx) {
+        const baseRange = 400; // Same as in isWithinBaseRange
+        
+        // Find all friendly bases
+        const friendlyBases = this.engine.entities.filter(entity => 
+            entity.constructor.name === 'Base' && 
+            entity.team === this.playerTeam && 
+            !entity.isDead
+        );
+        
+        ctx.save();
+        ctx.globalAlpha = 0.2;
+        ctx.strokeStyle = '#00ff00';
+        ctx.lineWidth = 2;
+        ctx.setLineDash([10, 5]);
+        
+        friendlyBases.forEach(base => {
+            const screenPos = this.engine.worldToScreen(base.position.x, base.position.y);
+            const screenRadius = baseRange * this.engine.camera.zoom;
+            
+            ctx.beginPath();
+            ctx.arc(screenPos.x, screenPos.y, screenRadius, 0, Math.PI * 2);
+            ctx.stroke();
+        });
         
         ctx.restore();
     }

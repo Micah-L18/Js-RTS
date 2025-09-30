@@ -304,6 +304,8 @@ class UIRenderer {
         const unitButtons = document.querySelectorAll('.unit-btn');
         unitButtons.forEach(button => {
             const unitType = button.getAttribute('data-unit');
+            if (!unitType) return; // Skip buttons without data-unit attribute
+            
             const cost = UnitFactory.getUnitCost(unitType);
             
             const canAfford = window.game.resources.canAfford(cost.supplies, cost.power, cost.population);

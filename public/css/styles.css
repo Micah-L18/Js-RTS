@@ -1229,6 +1229,24 @@ body {
     }
 }
 
+.supernova-btn.selected {
+    border-color: #ffd700;
+    background: linear-gradient(135deg, rgba(255, 215, 0, 0.3), rgba(255, 223, 0, 0.3));
+    box-shadow: 0 0 25px rgba(255, 215, 0, 0.6);
+    animation: supernova-pulse 2s infinite;
+}
+
+@keyframes supernova-pulse {
+    0%, 100% { 
+        box-shadow: 0 0 25px rgba(255, 215, 0, 0.6); 
+        transform: scale(1);
+    }
+    50% { 
+        box-shadow: 0 0 35px rgba(255, 215, 0, 0.8); 
+        transform: scale(1.02);
+    }
+}
+
 /* Player Setup */
 .player-setup {
     margin-bottom: 24px;
