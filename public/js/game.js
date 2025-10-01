@@ -25,13 +25,14 @@ class Game {
         this.buildingQueue = [];
         this.currentlyBuilding = null;
         this.buildingQueueTimer = null;
+        this.lastQueueState = null; // Track queue state to prevent unnecessary UI updates
         
         // Pending attacks queue for message ordering
         this.pendingAttacks = [];
         this.pendingAttackTimer = null;
         
-        // Don't auto-initialize in multiplayer mode
-        if (!window.multiplayerManager) {
+        // Don't auto-initialize in multiplayer mode or single-player custom initialization
+        if (!window.multiplayerManager && !window.singlePlayerInitializing) {
             this.init();
         }
     }
@@ -184,6 +185,9 @@ class Game {
         // Modal event handlers
         this.setupModalHandlers();
         
+        // Building queue event delegation - set up once and handle all clicks
+        this.setupBuildingQueueEventHandlers();
+        
         // Window resize handler to update minimap aspect ratio
         window.addEventListener('resize', () => {
             // Debounce resize events
@@ -194,6 +198,42 @@ class Game {
         });
         
         console.log('UI handlers setup complete');
+    }
+    
+    setupBuildingQueueEventHandlers() {
+        // Set up event delegation for building queue panel
+        const buildingQueuePanel = document.getElementById('buildingQueuePanel');
+        if (buildingQueuePanel) {
+            // Remove any existing listeners to prevent duplicates
+            buildingQueuePanel.removeEventListener('click', this.handleBuildingQueueClick);
+            
+            // Add single event listener using arrow function to preserve 'this' context
+            this.handleBuildingQueueClick = (e) => {
+                // Handle cancel button clicks for current building
+                if (e.target.matches('#currentBuildingInfo .queue-item-cancel')) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    console.log('Cancel current building clicked');
+                    this.cancelCurrentBuilding();
+                    return;
+                }
+                
+                // Handle cancel button clicks for queued buildings
+                if (e.target.matches('#queuedBuildingsList .queue-item-cancel')) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const index = parseInt(e.target.getAttribute('data-index'));
+                    if (!isNaN(index)) {
+                        console.log('Cancel queued building clicked, index:', index);
+                        this.cancelQueuedBuilding(index);
+                    }
+                    return;
+                }
+            };
+            
+            buildingQueuePanel.addEventListener('click', this.handleBuildingQueueClick);
+            console.log('Building queue event delegation set up');
+        }
     }
     
     initializeMinimap() {
@@ -389,15 +429,9 @@ class Game {
                 marine2.id = `marine2_${this.playerTeam}`;
                 this.engine.addEntity(marine2);
                 
-                // Create enemy starting units that both players can see
+                // Create enemy base only (no starting units for AI)
                 const enemyTeam = this.playerTeam === 'player' ? 'enemy' : 'player';
-                const enemyMarine1 = new Marine(enemyUnitPos.x, enemyUnitPos.y, enemyTeam);
-                enemyMarine1.id = `marine1_${enemyTeam}`;
-                this.engine.addEntity(enemyMarine1);
-                
-                const enemyMarine2 = new Marine(enemyUnitPos.x + 30, enemyUnitPos.y, enemyTeam);
-                enemyMarine2.id = `marine2_${enemyTeam}`;
-                this.engine.addEntity(enemyMarine2);
+                // Enemy starts with base only - AI will build units
                 
                 // Set camera to player's starting position
                 this.engine.setCameraPosition(cameraPos.x, cameraPos.y);
@@ -422,15 +456,8 @@ class Game {
                 enemyBase.isUnderConstruction = false;
                 this.engine.addEntity(enemyBase);
                 
-                const enemyMarine1 = new Marine(1750, 1280, 'enemy');
-                const enemyMarine2 = new Marine(1780, 1280, 'enemy');
-                this.engine.addEntity(enemyMarine1);
-                this.engine.addEntity(enemyMarine2);
-                
-                if (typeof Scorpion !== 'undefined') {
-                    const enemyScorpion = new Scorpion(1850, 1280, 'enemy');
-                    this.engine.addEntity(enemyScorpion);
-                }
+                // Enemy AI starts with base only - no starting units
+                // AI will build units through normal production
                 
                 this.engine.setCameraPosition(200, 200);
             }
@@ -906,8 +933,8 @@ class Game {
         this.effects.forEach(effect => effect.update(deltaTime));
         this.effects = this.effects.filter(effect => !effect.isDead);
         
-        // Update building queue UI
-        this.updateBuildingQueueUI();
+        // Update building queue UI only when needed (not every frame)
+        this.updateBuildingQueueUIIfNeeded();
         
         // Check win condition in multiplayer
         if (this.isMultiplayer) {
@@ -1171,13 +1198,10 @@ class Game {
     placeBuildingAtMouse(e, buildingType, cost) {
         const rect = this.engine.canvas.getBoundingClientRect();
         
-        // Account for canvas scaling and device pixel ratio (same as input handler)
-        const scaleX = this.engine.canvas.width / rect.width;
-        const scaleY = this.engine.canvas.height / rect.height;
-        
+        // Use CSS coordinates directly (consistent with input handler)
         const mousePos = new Vector2(
-            (e.clientX - rect.left) * scaleX,
-            (e.clientY - rect.top) * scaleY
+            e.clientX - rect.left,
+            e.clientY - rect.top
         );
         const worldPos = this.engine.screenToWorld(mousePos.x, mousePos.y);
         
@@ -1303,9 +1327,39 @@ class Game {
     
     // Building Queue Management
     addBuildingToQueue(buildingData) {
+        // Check building limits before adding to queue
+        if (!this.checkBuildingLimits(buildingData.type)) {
+            // Show error message to player
+            this.showBuildingLimitMessage(buildingData.type);
+            return false;
+        }
+        
+        // Pre-create the building entity and mark it as queued
+        const building = BuildingFactory.create(buildingData.type, buildingData.position.x, buildingData.position.y, buildingData.team);
+        building.isQueued = true; // Mark as queued (not yet under construction)
+        building.isUnderConstruction = false;
+        building.isActive = false; // Queued buildings are inactive until construction starts
+        this.engine.addEntity(building);
+        
+        // Store the building entity reference in the queue data
+        buildingData.buildingEntity = building;
+        
         this.buildingQueue.push(buildingData);
         this.updateBuildingQueueUI();
         this.processBuildingQueue();
+        return true;
+    }
+    
+    showBuildingLimitMessage(buildingType) {
+        // Display a temporary message about building limits
+        const message = buildingType === 'turret' 
+            ? 'Maximum 5 turrets allowed per base'
+            : 'Maximum 7 buildings allowed per base';
+            
+        console.log(message);
+        
+        // You could add a visual notification here
+        // For now, just log to console
     }
     
     processBuildingQueue() {
@@ -1318,9 +1372,20 @@ class Game {
     }
     
     startBuildingConstruction(buildingData) {
-        // Create the building entity
-        const building = BuildingFactory.create(buildingData.type, buildingData.position.x, buildingData.position.y, buildingData.team);
-        this.engine.addEntity(building);
+        // Use the pre-created building entity from the queue
+        const building = buildingData.buildingEntity;
+        
+        if (!building) {
+            console.error('No building entity found in queue data!');
+            return;
+        }
+        
+        // Convert from queued to under construction
+        building.isQueued = false;
+        building.isUnderConstruction = true;
+        building.isActive = true; // Activate the building when construction starts
+        building.constructionStartTime = Date.now();
+        building.constructionProgress = 0;
         
         this.currentlyBuilding = {
             building: building,
@@ -1373,6 +1438,47 @@ class Game {
         }
     }
     
+    // Only update building queue UI when the state actually changes
+    updateBuildingQueueUIIfNeeded() {
+        // Create a state snapshot to compare (excluding progress for structural changes)
+        const currentState = {
+            queueLength: this.buildingQueue.length,
+            currentBuilding: this.currentlyBuilding ? {
+                type: this.currentlyBuilding.data.type
+                // Progress excluded from structural comparison
+            } : null,
+            queueTypes: this.buildingQueue.map(b => b.type)
+        };
+        
+        // Convert to string for comparison
+        const currentStateStr = JSON.stringify(currentState);
+        
+        // Check if structure has changed (this determines if we need to recreate DOM elements)
+        const structureChanged = this.lastQueueState !== currentStateStr;
+        
+        if (structureChanged) {
+            this.lastQueueState = currentStateStr;
+            this.updateBuildingQueueUI(); // Full UI rebuild
+        } else {
+            // Only update progress without recreating DOM elements
+            this.updateBuildingProgress();
+        }
+    }
+    
+    // Update only the progress bar without recreating DOM elements
+    updateBuildingProgress() {
+        if (this.currentlyBuilding) {
+            const currentBuildingProgress = document.getElementById('currentBuildingProgress');
+            if (currentBuildingProgress) {
+                const building = this.currentlyBuilding.building;
+                if (building && building.constructionProgress !== undefined) {
+                    const progress = Math.round(building.constructionProgress * 100);
+                    currentBuildingProgress.style.width = `${progress}%`;
+                }
+            }
+        }
+    }
+    
     // Update building queue UI
     updateBuildingQueueUI() {
         const queuePanel = document.getElementById('buildingQueuePanel');
@@ -1393,30 +1499,39 @@ class Game {
             currentBuildingInfo.style.display = 'block';
             currentBuildingName.textContent = this.getBuildingDisplayName(this.currentlyBuilding.data.type);
             
-            // Update progress bar
-            const building = this.currentlyBuilding.building;
-            if (building && building.constructionProgress !== undefined) {
-                const progress = Math.round(building.constructionProgress * 100);
-                currentBuildingProgress.style.width = `${progress}%`;
+            // Update the building icon dynamically
+            const currentBuildingIcon = document.querySelector('#currentBuildingInfo .queue-item-icon');
+            if (currentBuildingIcon) {
+                currentBuildingIcon.textContent = this.getBuildingIcon(this.currentlyBuilding.data.type);
             }
+            
+            // Progress bar is now updated separately in updateBuildingProgress()
         } else {
             currentBuildingInfo.style.display = 'none';
         }
         
         // Update queued buildings list
         queuedBuildingsList.innerHTML = '';
+        
         if (this.buildingQueue.length > 0) {
             emptyQueueMessage.style.display = 'none';
             this.buildingQueue.forEach((buildingData, index) => {
                 const queueItem = document.createElement('div');
+                // Apply proper classes for queued buildings
                 queueItem.className = 'building-queue-item queued-building';
+                
                 queueItem.innerHTML = `
-                    <div class="queue-item-icon">${this.getBuildingIcon(buildingData.type)}</div>
                     <div class="queue-item-info">
-                        <div class="queue-item-name">${this.getBuildingDisplayName(buildingData.type)}</div>
-                        <div class="queue-position">Position ${index + 1}</div>
+                        <div class="queue-item-icon">${this.getBuildingIcon(buildingData.type)}</div>
+                        <div class="queue-item-details">
+                            <div class="queue-item-name">${this.getBuildingDisplayName(buildingData.type)}</div>
+                            <div class="queue-item-progress">Position ${index + 1} in queue</div>
+                        </div>
                     </div>
+                    <button class="queue-item-cancel" data-index="${index}">Cancel</button>
                 `;
+                
+                // No need for individual event listeners - using event delegation now
                 queuedBuildingsList.appendChild(queueItem);
             });
         } else if (!this.currentlyBuilding) {
@@ -1444,6 +1559,121 @@ class Game {
             'turret': '🔫'
         };
         return icons[buildingType] || '🏗️';
+    }
+    
+    // Building cancellation functions
+    cancelCurrentBuilding() {
+        if (this.currentlyBuilding) {
+            console.log('Canceling current building:', this.currentlyBuilding.data.type);
+            
+            // Get refund amount (partial refund based on progress)
+            const building = this.currentlyBuilding.building;
+            const progress = building ? building.constructionProgress || 0 : 0;
+            const refundPercentage = 0.75; // 75% refund
+            
+            const cost = this.currentlyBuilding.data.cost;
+            const suppliesRefund = Math.floor(cost.supplies * refundPercentage);
+            const powerRefund = Math.floor(cost.power * refundPercentage);
+            
+            // Give refund
+            if (this.resources) {
+                this.resources.addSupplies(suppliesRefund);
+                this.resources.addPower(powerRefund);
+                console.log(`Refunded ${suppliesRefund} supplies and ${powerRefund} power`);
+            }
+            
+            // Remove building from world if it exists
+            if (building && this.engine) {
+                this.engine.removeEntity(building);
+            }
+            
+            // Clear building timer
+            if (this.buildingQueueTimer) {
+                clearTimeout(this.buildingQueueTimer);
+                this.buildingQueueTimer = null;
+            }
+            
+            // Clear current building
+            this.currentlyBuilding = null;
+            
+            // Process next in queue
+            this.processBuildingQueue();
+            this.updateBuildingQueueUI();
+        }
+    }
+    
+    cancelQueuedBuilding(index) {
+        console.log('cancelQueuedBuilding called with index:', index);
+        console.log('Building queue length:', this.buildingQueue.length);
+        console.log('Building queue:', this.buildingQueue);
+        
+        if (index >= 0 && index < this.buildingQueue.length) {
+            const canceledBuilding = this.buildingQueue[index];
+            console.log('Canceling queued building:', canceledBuilding.type);
+            
+            // Remove the actual building entity from the world
+            if (canceledBuilding.buildingEntity && this.engine) {
+                console.log('Removing building entity from world:', canceledBuilding.buildingEntity.id);
+                this.engine.removeEntity(canceledBuilding.buildingEntity);
+            }
+            
+            // Give full refund for queued buildings
+            const cost = canceledBuilding.cost;
+            if (this.resources && cost) {
+                this.resources.addSupplies(cost.supplies || 0);
+                this.resources.addPower(cost.power || 0);
+                console.log(`Refunded ${cost.supplies || 0} supplies and ${cost.power || 0} power`);
+            }
+            
+            // Remove from queue
+            this.buildingQueue.splice(index, 1);
+            this.updateBuildingQueueUI();
+        } else {
+            console.error('Invalid queue index:', index, 'Queue length:', this.buildingQueue.length);
+        }
+    }
+    
+    // Building limit checks
+    canBuildMoreBuildings() {
+        // No building limits in legendary mode
+        if (window.selectedDifficulty === 'legendary') {
+            return true;
+        }
+        
+        const playerBuildings = this.engine.entities.filter(entity => 
+            entity.team === 'player' && 
+            entity.type && 
+            ['supply', 'barracks', 'reactor', 'base'].includes(entity.type)
+        );
+        return playerBuildings.length < 7; // Maximum 7 buildings per base
+    }
+    
+    canBuildMoreTurrets() {
+        // No turret limits in legendary mode
+        if (window.selectedDifficulty === 'legendary') {
+            return true;
+        }
+        
+        const playerTurrets = this.engine.entities.filter(entity => 
+            entity.team === 'player' && 
+            entity.type === 'turret'
+        );
+        return playerTurrets.length < 5; // Maximum 5 turrets per base
+    }
+    
+    checkBuildingLimits(buildingType) {
+        if (buildingType === 'turret') {
+            if (!this.canBuildMoreTurrets()) {
+                console.log('Cannot build more turrets: limit of 5 reached');
+                return false;
+            }
+        } else if (['supply', 'barracks', 'reactor', 'base'].includes(buildingType)) {
+            if (!this.canBuildMoreBuildings()) {
+                console.log('Cannot build more buildings: limit of 7 reached');
+                return false;
+            }
+        }
+        return true;
     }
     
     // Clean up queue timer
@@ -1830,4 +2060,3 @@ window.addEventListener('load', () => {
         }
     }, 100);
 });
-

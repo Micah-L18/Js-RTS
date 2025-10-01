@@ -36,10 +36,24 @@ class Building {
         // Visual
         this.color = team === 'player' ? '#004488' : '#884400';
         this.selected = false;
+        
+        // Log building creation
+        if (window.spLogger) {
+            window.spLogger.log('BUILD_CREATE', `${this.constructor.name} created`, {
+                id: this.id || 'pending',
+                position: { x: x, y: y },
+                team: team,
+                health: this.health,
+                isUnderConstruction: this.isUnderConstruction
+            });
+        }
     }
     
     update(deltaTime) {
         if (this.isDead) return;
+        
+        // Queued buildings should not update until construction starts
+        if (this.isQueued) return;
         
         // Update construction
         if (this.isUnderConstruction) {
@@ -89,10 +103,26 @@ class Building {
         
         ctx.save();
         
-        // Building body
-        ctx.fillStyle = this.isUnderConstruction ? 
-            `rgba(${this.getRGBFromHex(this.color)}, ${this.constructionProgress})` : 
-            this.color;
+        // Building body - different rendering for queued vs under construction vs completed
+        if (this.isQueued) {
+            // Queued buildings - show as semi-transparent outline
+            ctx.fillStyle = `rgba(${this.getRGBFromHex(this.color)}, 0.3)`;
+            ctx.strokeStyle = this.team === 'player' ? '#00ff00' : '#ff0000';
+            ctx.lineWidth = 2;
+            ctx.setLineDash([5, 5]); // Dashed outline for queued buildings
+        } else if (this.isUnderConstruction) {
+            // Under construction - gradually fade in
+            ctx.fillStyle = `rgba(${this.getRGBFromHex(this.color)}, ${this.constructionProgress})`;
+            ctx.strokeStyle = this.team === 'player' ? '#00ff00' : '#ff0000';
+            ctx.lineWidth = this.selected ? 3 : 1;
+            ctx.setLineDash([]); // Solid outline
+        } else {
+            // Completed buildings - fully opaque
+            ctx.fillStyle = this.color;
+            ctx.strokeStyle = this.team === 'player' ? '#00ff00' : '#ff0000';
+            ctx.lineWidth = this.selected ? 3 : 1;
+            ctx.setLineDash([]); // Solid outline
+        }
         
         ctx.fillRect(
             this.position.x - this.width / 2,
@@ -102,14 +132,15 @@ class Building {
         );
         
         // Building outline
-        ctx.strokeStyle = this.team === 'player' ? '#00ff00' : '#ff0000';
-        ctx.lineWidth = this.selected ? 3 : 1;
         ctx.strokeRect(
             this.position.x - this.width / 2,
             this.position.y - this.height / 2,
             this.width,
             this.height
         );
+        
+        // Reset line dash for other elements
+        ctx.setLineDash([]);
         
         // Construction progress
         if (this.isUnderConstruction) {
@@ -364,7 +395,27 @@ class Building {
     }
     
     takeDamage(amount, fromMultiplayer = false, attacker = null) {
+        const oldHealth = this.health;
         this.health = Math.max(0, this.health - amount);
+        const newHealth = this.health;
+        
+        // Enhanced damage logging
+        console.log(`💥 BUILDING DAMAGE: ${this.constructor.name} (${this.id}) took ${amount} damage. Health: ${oldHealth} → ${newHealth}`);
+        
+        if (window.spLogger) {
+            window.spLogger.log('BUILD_DAMAGE', `${this.constructor.name} took damage`, {
+                buildingId: this.id,
+                buildingType: this.constructor.name,
+                team: this.team,
+                position: { x: this.position.x, y: this.position.y },
+                damageAmount: amount,
+                oldHealth: oldHealth,
+                newHealth: newHealth,
+                attackerId: attacker ? attacker.id : null,
+                attackerType: attacker ? attacker.constructor.name : null,
+                fromMultiplayer: fromMultiplayer
+            });
+        }
         
         if (this.health <= 0) {
             this.die();
@@ -372,6 +423,42 @@ class Building {
     }
     
     die() {
+        console.log(`🏗️ BUILDING DESTROYED: ${this.constructor.name} (team: ${this.team}) ID: ${this.id} at (${this.position.x.toFixed(0)}, ${this.position.y.toFixed(0)})`);
+        
+        // Check for other buildings at the same location (stacking detection)
+        if (window.game && window.game.engine) {
+            const nearbyBuildings = window.game.engine.entities.filter(entity => 
+                entity instanceof Building && 
+                entity !== this && 
+                entity.team === this.team &&
+                entity.position.distance(this.position) < 50 // Within 50 pixels
+            );
+            
+            if (nearbyBuildings.length > 0) {
+                console.warn(`⚠️ STACKED BUILDINGS DETECTED: ${nearbyBuildings.length} other buildings near destroyed ${this.constructor.name}`);
+                nearbyBuildings.forEach(building => {
+                    console.log(`  - ${building.constructor.name} (${building.id}) at (${building.position.x.toFixed(0)}, ${building.position.y.toFixed(0)}) health: ${building.health}`);
+                });
+            }
+        }
+        
+        // Log to single player logger
+        if (window.spLogger) {
+            window.spLogger.log('BUILD_DESTROY', `${this.constructor.name} destroyed`, {
+                id: this.id,
+                position: { x: this.position.x, y: this.position.y },
+                team: this.team,
+                finalHealth: this.health,
+                nearbyBuildingsCount: window.game && window.game.engine ? 
+                    window.game.engine.entities.filter(entity => 
+                        entity instanceof Building && 
+                        entity !== this && 
+                        entity.team === this.team &&
+                        entity.position.distance(this.position) < 50
+                    ).length : 0
+            });
+        }
+        
         this.isDead = true;
         this.isActive = false;
         
@@ -640,7 +727,7 @@ class Turret extends Building {
     update(deltaTime) {
         super.update(deltaTime);
         
-        if (this.isDead || this.isUnderConstruction) return;
+        if (this.isDead || this.isUnderConstruction || this.isQueued) return;
         
         // Auto-target enemies
         this.updateTargeting(deltaTime);

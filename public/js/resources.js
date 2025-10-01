@@ -66,7 +66,8 @@ class ResourceManager {
             entity.constructor.name === 'Reactor' && 
             entity.team === playerTeam && 
             !entity.isDead &&
-            !entity.isUnderConstruction
+            !entity.isUnderConstruction &&
+            !entity.isQueued // Exclude queued reactors from power calculation
         );
         
         this.power = reactors.length; // 1 power per reactor
@@ -82,7 +83,8 @@ class ResourceManager {
             entity.constructor.name === 'Barracks' && 
             entity.team === playerTeam && 
             !entity.isDead &&
-            !entity.isUnderConstruction
+            !entity.isUnderConstruction &&
+            !entity.isQueued // Exclude queued barracks from population calculation
         );
         
         this.maxPopulation = Math.min(50, 25 + (barracks.length * 5)); // 25 + 5 per barracks, max 50
@@ -99,9 +101,12 @@ class ResourceManager {
         );
         const unitPopulation = units.reduce((total, unit) => total + (unit.populationCost || 1), 0);
         
-        // Count queued units from all buildings
+        // Count queued units from all buildings (exclude queued buildings)
         const buildings = window.game.engine.entities.filter(entity => 
-            entity instanceof Building && entity.team === playerTeam && !entity.isDead
+            entity instanceof Building && 
+            entity.team === playerTeam && 
+            !entity.isDead &&
+            !entity.isQueued // Queued buildings shouldn't produce units
         );
         
         let queuedPopulation = 0;
@@ -165,7 +170,8 @@ class ResourceManager {
             entity.constructor.name === 'SupplyDepot' && 
             entity.team === playerTeam && 
             !entity.isDead &&
-            !entity.isUnderConstruction
+            !entity.isUnderConstruction &&
+            !entity.isQueued // Exclude queued supply depots from supply generation
         );
         
         return supplyDepots.length * 4; // 4 supplies per second per depot
@@ -193,7 +199,10 @@ class ResourceManager {
         }
         
         const buildings = window.game.engine.entities.filter(entity => 
-            entity instanceof Building && entity.team === 'player' && !entity.isDead
+            entity instanceof Building && 
+            entity.team === 'player' && 
+            !entity.isDead &&
+            !entity.isQueued // Exclude queued buildings from resource rate calculations
         );
         
         let totalSupplyRate = this.supplyRate;

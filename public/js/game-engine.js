@@ -11,7 +11,7 @@ class GameEngine {
         this.lastFrameTime = 0;
         this.deltaTime = 0;
         this.fps = 60;
-        this.targetFrameTime = 1000 / this.fps;
+        this.frameTime = 1000 / this.fps;
         
         // Game world settings
         this.worldWidth = 2000;
@@ -35,6 +35,35 @@ class GameEngine {
         this.effects = [];
         
         this.init();
+    }
+    
+    renderSelectionIndicators() {
+        // Draw selection circles and health bars for selected entities
+        this.selectedEntities.forEach(entity => {
+            if (entity.position && entity.radius) {
+                this.ctx.strokeStyle = '#00ff00';
+                this.ctx.lineWidth = 2;
+                this.ctx.beginPath();
+                this.ctx.arc(entity.position.x, entity.position.y, entity.radius + 5, 0, Math.PI * 2);
+                this.ctx.stroke();
+                
+                // Health bar for selected entities
+                if (entity.health !== undefined && entity.maxHealth !== undefined) {
+                    this.renderHealthBar(entity);
+                }
+            }
+        });
+        
+        // Draw health bars for all enemy units (non-player team)
+        this.entities.forEach(entity => {
+            if (entity.position && entity.radius && 
+                entity.health !== undefined && entity.maxHealth !== undefined &&
+                entity.team !== 'player' && 
+                !entity.isDead &&
+                !this.selectedEntities.includes(entity)) { // Don't duplicate for selected entities
+                this.renderHealthBar(entity);
+            }
+        });
     }
     
     init() {
@@ -243,10 +272,9 @@ class GameEngine {
         // Don't render grid if zoomed out too much (grid would be too dense)
         if (zoom < 0.2) return;
         
-        // Calculate visible world area (accounting for device pixel ratio)
-        const dpr = window.devicePixelRatio || 1;
-        const viewWidth = (this.canvas.width / dpr) / zoom;
-        const viewHeight = (this.canvas.height / dpr) / zoom;
+        // Calculate visible world area using CSS pixels
+        const viewWidth = this.canvas.clientWidth / zoom;
+        const viewHeight = this.canvas.clientHeight / zoom;
         
         // Calculate which grid lines are visible
         // Start from the first grid line before the visible area
@@ -585,10 +613,9 @@ class GameEngine {
         const newX = this.camera.x + dx;
         const newY = this.camera.y + dy;
         
-        // Calculate bounds for current zoom level
-        const dpr = window.devicePixelRatio || 1;
-        const viewWidth = (this.canvas.width / dpr) / this.camera.zoom;
-        const viewHeight = (this.canvas.height / dpr) / this.camera.zoom;
+        // Calculate bounds for current zoom level using CSS pixels
+        const viewWidth = this.canvas.clientWidth / this.camera.zoom;
+        const viewHeight = this.canvas.clientHeight / this.camera.zoom;
         
         // Camera position represents top-left of viewport
         // Keep camera strictly within world bounds
@@ -602,9 +629,8 @@ class GameEngine {
     }
     
     setCameraPosition(x, y) {
-        const dpr = window.devicePixelRatio || 1;
-        const viewWidth = (this.canvas.width / dpr) / this.camera.zoom;
-        const viewHeight = (this.canvas.height / dpr) / this.camera.zoom;
+        const viewWidth = this.canvas.clientWidth / this.camera.zoom;
+        const viewHeight = this.canvas.clientHeight / this.camera.zoom;
         
         // Camera position represents top-left of viewport
         // Keep camera strictly within world bounds
@@ -626,20 +652,19 @@ class GameEngine {
     }
     
     screenToWorld(screenX, screenY) {
-        // Account for device pixel ratio in coordinate conversion
-        const dpr = window.devicePixelRatio || 1;
+        // Convert CSS pixel coordinates to world coordinates
+        // No need to divide by DPR since we're already using CSS coordinates
         return new Vector2(
-            (screenX / dpr) / this.camera.zoom + this.camera.x,
-            (screenY / dpr) / this.camera.zoom + this.camera.y
+            screenX / this.camera.zoom + this.camera.x,
+            screenY / this.camera.zoom + this.camera.y
         );
     }
     
     worldToScreen(worldX, worldY) {
-        // Account for device pixel ratio in coordinate conversion
-        const dpr = window.devicePixelRatio || 1;
+        // Convert world coordinates to CSS pixel coordinates
         return new Vector2(
-            ((worldX - this.camera.x) * this.camera.zoom) * dpr,
-            ((worldY - this.camera.y) * this.camera.zoom) * dpr
+            (worldX - this.camera.x) * this.camera.zoom,
+            (worldY - this.camera.y) * this.camera.zoom
         );
     }
     

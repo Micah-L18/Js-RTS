@@ -43,6 +43,10 @@ class AIOpponent {
             buildingInterval: 30000 // Build buildings every 30 seconds
         };
         
+        // Population management
+        this.populationCap = 50; // Maximum population limit
+        this.currentPopulation = 0; // Track current population
+        
         // Tactical state
         this.tactics = {
             baseDefenders: [], // Units assigned to defend base
@@ -53,78 +57,255 @@ class AIOpponent {
         };
     }
     
-    // Initialize AI with a premade base
+    // Initialize AI with just the main base, then build sequentially
     initializeBase() {
         if (!window.game || !window.game.engine) {
             console.error('Cannot initialize AI base: game engine not available');
             return;
         }
         
-        const baseX = 1800; // Right side of map
-        const baseY = 800; // Center vertically
+        // Calculate position based on AI index to avoid overlapping
+        const { baseX, baseY } = this.calculateBasePosition();
         
-        // Create main base (HQ)
+        // Create main base (HQ) only
         const mainBase = BuildingFactory.create('base', baseX, baseY, this.team);
-        mainBase.id = `ai_base_${Date.now()}`;
+        mainBase.id = `ai_base_${this.aiIndex}_${Date.now()}`;
         mainBase.isUnderConstruction = false; // Start completed
         window.game.engine.addEntity(mainBase);
         
-        // Create defensive turrets around base
-        const turretPositions = [
-            { x: baseX - 150, y: baseY - 100 }, // Top-left
-            { x: baseX + 150, y: baseY - 100 }, // Top-right
-            { x: baseX - 150, y: baseY + 100 }, // Bottom-left
-            { x: baseX + 150, y: baseY + 100 }, // Bottom-right
-            { x: baseX, y: baseY - 200 },       // North guard
-            { x: baseX - 200, y: baseY }        // West guard
-        ];
-        
-        turretPositions.forEach((pos, index) => {
-            const turret = BuildingFactory.create('turret', pos.x, pos.y, this.team);
-            turret.id = `ai_turret_${index}_${Date.now()}`;
-            turret.isUnderConstruction = false; // Start completed
-            window.game.engine.addEntity(turret);
-        });
-        
-        // Create support buildings
-        const supplyDepot = BuildingFactory.create('supply', baseX - 100, baseY + 150, this.team);
-        supplyDepot.id = `ai_supply_${Date.now()}`;
-        supplyDepot.isUnderConstruction = false;
-        window.game.engine.addEntity(supplyDepot);
-        
-        const reactor = BuildingFactory.create('reactor', baseX + 100, baseY + 150, this.team);
-        reactor.id = `ai_reactor_${Date.now()}`;
-        reactor.isUnderConstruction = false;
-        window.game.engine.addEntity(reactor);
-        
-        const barracks = BuildingFactory.create('barracks', baseX, baseY + 200, this.team);
-        barracks.id = `ai_barracks_${Date.now()}`;
-        barracks.isUnderConstruction = false;
-        window.game.engine.addEntity(barracks);
+        // Initialize building queue system for AI
+        this.initializeBuildingQueue(baseX, baseY);
         
         // Create initial army
         this.spawnInitialUnits(baseX, baseY);
         
-        console.log(`AI base initialized at (${baseX}, ${baseY}) with 6 turrets and initial army`);
+        console.log(`AI base ${this.aiIndex} initialized at (${baseX}, ${baseY}) - will build sequentially`);
+    }
+    
+    // Initialize the AI building queue system
+    initializeBuildingQueue(baseX, baseY) {
+        this.buildingQueue = [];
+        this.currentlyBuilding = null;
+        this.buildingPositions = {
+            supply: [
+                { x: baseX - 100, y: baseY + 150 },
+                { x: baseX - 150, y: baseY + 200 }
+            ],
+            reactor: [
+                { x: baseX + 100, y: baseY + 150 },
+                { x: baseX + 150, y: baseY + 200 }
+            ],
+            barracks: [
+                { x: baseX, y: baseY + 200 },
+                { x: baseX + 50, y: baseY + 250 }
+            ],
+            turret: [
+                { x: baseX - 150, y: baseY - 100 },
+                { x: baseX + 150, y: baseY - 100 },
+                { x: baseX - 150, y: baseY + 100 },
+                { x: baseX + 150, y: baseY + 100 },
+                { x: baseX, y: baseY - 200 },
+                { x: baseX - 200, y: baseY }
+            ]
+        };
+        
+        // Queue the building order: 1 of each type first, then second of each type
+        const buildOrder = [
+            'supply', 'reactor', 'barracks', 'turret',  // First round
+            'supply', 'reactor', 'barracks', 'turret'   // Second round (limited to 2 each)
+        ];
+        
+        buildOrder.forEach(buildingType => {
+            this.queueBuilding(buildingType);
+        });
+        
+        // Start building immediately
+        this.processBuildingQueue();
+    }
+    
+    // Queue a building for construction
+    queueBuilding(buildingType) {
+        const positions = this.buildingPositions[buildingType];
+        if (!positions) return;
+        
+        // Count existing AND queued buildings of this type to prevent over-building
+        const existingBuildings = window.game.engine.entities.filter(entity => 
+            entity.team === this.team && 
+            entity.type === buildingType &&
+            !entity.isDead
+        );
+        
+        // Count buildings already in queue
+        const queuedBuildings = this.buildingQueue.filter(queuedBuilding => 
+            queuedBuilding.type === buildingType
+        );
+        
+        const totalCount = existingBuildings.length + queuedBuildings.length;
+        
+        // Only build up to 2 of each type (including queued buildings)
+        const maxCount = 2;
+        if (totalCount >= maxCount) {
+            console.log(`🤖 AI QUEUE BLOCKED: Already have/queued ${totalCount} ${buildingType} buildings (existing: ${existingBuildings.length}, queued: ${queuedBuildings.length}) - STRICT 2-BUILDING CAP`);
+            return;
+        }
+        
+        const position = positions[totalCount]; // Use total count for position
+        if (!position) return;
+        
+        this.buildingQueue.push({
+            type: buildingType,
+            position: position,
+            startTime: null
+        });
+        
+        console.log(`🤖 AI QUEUED: ${buildingType} #${totalCount + 1} at position (${position.x}, ${position.y})`);
+    }
+    
+    // Process the building queue
+    processBuildingQueue() {
+        // If already building something, wait
+        if (this.currentlyBuilding) return;
+        
+        // If queue is empty, we're done
+        if (this.buildingQueue.length === 0) {
+            // Start producing units once all buildings are complete
+            this.startUnitProduction();
+            return;
+        }
+        
+        // Start next building
+        const nextBuilding = this.buildingQueue.shift();
+        this.startBuilding(nextBuilding);
+    }
+    
+    // Start constructing a building
+    startBuilding(buildingData) {
+        const building = BuildingFactory.create(
+            buildingData.type, 
+            buildingData.position.x, 
+            buildingData.position.y, 
+            this.team
+        );
+        
+        building.id = `ai_${buildingData.type}_${this.aiIndex}_${Date.now()}`;
+        building.isUnderConstruction = true;
+        building.constructionProgress = 0;
+        building.constructionTime = this.getBuildingConstructionTime(buildingData.type);
+        building.constructionStartTime = Date.now();
+        
+        window.game.engine.addEntity(building);
+        
+        this.currentlyBuilding = {
+            building: building,
+            startTime: Date.now(),
+            type: buildingData.type
+        };
+        
+        console.log(`AI ${this.aiIndex} started building ${buildingData.type} at (${buildingData.position.x}, ${buildingData.position.y})`);
+    }
+    
+    // Get construction time for different building types
+    getBuildingConstructionTime(buildingType) {
+        const times = {
+            supply: 8000,    // 8 seconds
+            reactor: 10000,  // 10 seconds
+            barracks: 12000, // 12 seconds
+            turret: 6000     // 6 seconds
+        };
+        return times[buildingType] || 8000;
+    }
+    
+    // Check building progress and completion
+    updateBuildingProgress() {
+        if (!this.currentlyBuilding) return;
+        
+        const { building, startTime } = this.currentlyBuilding;
+        const elapsed = Date.now() - startTime;
+        const progress = Math.min(elapsed / building.constructionTime, 1);
+        
+        building.constructionProgress = progress;
+        
+        // Building completed
+        if (progress >= 1) {
+            building.isUnderConstruction = false;
+            building.constructionProgress = 1;
+            
+            console.log(`AI ${this.aiIndex} completed building ${this.currentlyBuilding.type}`);
+            
+            this.currentlyBuilding = null;
+            
+            // Process next building in queue
+            setTimeout(() => this.processBuildingQueue(), 1000); // Small delay between buildings
+        }
+    }
+    
+    // Start unit production after buildings are complete
+    startUnitProduction() {
+        console.log(`AI ${this.aiIndex} finished building base, starting unit production`);
+        this.unitProductionActive = true;
+    }
+
+    calculateBasePosition() {
+        // Get world size for dynamic positioning
+        const worldWidth = window.game.engine.worldWidth;
+        const worldHeight = window.game.engine.worldHeight;
+        
+        // Get selected difficulty from single-player page
+        const difficulty = window.selectedDifficulty || 'easy';
+        
+        if (difficulty === 'easy') {
+            // Easy: 2000x2000 map - Single AI in top right corner
+            return { baseX: 1600, baseY: 400 };
+            
+        } else if (difficulty === 'normal') {
+            // Normal: 2500x2500 map - 2 AIs positioned strategically
+            if (this.aiIndex === 0) {
+                // First AI - top center
+                return { baseX: 1250, baseY: 400 };
+            } else {
+                // Second AI - right center
+                return { baseX: 2000, baseY: 1250 };
+            }
+            
+        } else if (difficulty === 'hard') {
+            // Hard: 3000x3000 map - 3 AIs in triangle formation
+            if (this.aiIndex === 0) {
+                // First AI - northeast corner
+                return { baseX: 2400, baseY: 600 };
+            } else if (this.aiIndex === 1) {
+                // Second AI - northwest corner
+                return { baseX: 600, baseY: 600 };
+            } else {
+                // Third AI - south center
+                return { baseX: 1500, baseY: 2400 };
+            }
+            
+        } else {
+            // Fallback for any other difficulty - spread them out
+            const spacing = Math.min(worldWidth, worldHeight) / 3;
+            const row = Math.floor(this.aiIndex / 2);
+            const col = this.aiIndex % 2;
+            return { 
+                baseX: worldWidth * 0.7 + col * spacing * 0.3, 
+                baseY: worldHeight * 0.3 + row * spacing * 0.3 
+            };
+        }
     }
     
     spawnInitialUnits(baseX, baseY) {
-        // Spawn initial defending units
-        const unitTypes = ['marine', 'marine', 'warthog', 'marine', 'scorpion'];
-        const spawnRadius = 120;
-        
-        unitTypes.forEach((unitType, index) => {
-            const angle = (index / unitTypes.length) * Math.PI * 2;
-            const spawnX = baseX + Math.cos(angle) * spawnRadius;
-            const spawnY = baseY + Math.sin(angle) * spawnRadius;
-            
-            const unit = UnitFactory.create(unitType, spawnX, spawnY, this.team);
-            unit.id = `ai_${unitType}_${index}_${Date.now()}`;
-            window.game.engine.addEntity(unit);
-            
-            // Assign initial defenders
-            this.tactics.baseDefenders.push(unit);
-        });
+        // AI now starts with no units - must build them through normal production
+        console.log(`AI ${this.aiIndex}: Starting with no units - will build army through production`);
+        this.currentPopulation = 0;
+    }
+    
+    getUnitPopulationCost(unitType) {
+        // Return population cost for each unit type
+        switch(unitType) {
+            case 'marine': return 1;
+            case 'warthog': return 3;
+            case 'scorpion': return 5;
+            default: return 1;
+        }
     }
     
     initializeLegendaryBase(aiIndex) {
@@ -156,6 +337,9 @@ class AIOpponent {
         // Create full base infrastructure with 2 of each building
         this.createFullBaseInfrastructure(baseX, baseY, aiIndex);
         
+        // Spawn initial army
+        this.spawnLegendaryInitialUnits(baseX, baseY);
+        
         // Start with moderate resources for enhanced base
         this.resources = {
             credits: 1000,
@@ -163,70 +347,46 @@ class AIOpponent {
             materials: 400
         };
         
-        console.log(`Enhanced legendary AI base ${aiIndex} initialized at (${baseX.toFixed(0)}, ${baseY.toFixed(0)}) with full infrastructure`);
+        console.log(`Enhanced legendary AI base ${aiIndex} initialized at (${baseX.toFixed(0)}, ${baseY.toFixed(0)}) with full infrastructure and population cap of ${this.populationCap}`);
     }
     
     spawnLegendaryInitialUnits(baseX, baseY) {
-        // Spawn larger initial army for legendary mode
-        const unitTypes = ['marine', 'marine', 'marine', 'warthog', 'warthog', 'scorpion', 'marine', 'marine'];
-        const spawnRadius = 180;
+        // Spawn legendary army respecting population cap of 50
+        // Same composition as regular bases for consistency
+        const unitComposition = [
+            // 30 Marines (30 population)
+            ...Array(30).fill('marine'),
+            // 4 Warthogs (12 population)
+            ...Array(4).fill('warthog'),
+            // 1 Scorpion (5 population)
+            'scorpion'
+        ];
         
-        unitTypes.forEach((unitType, index) => {
-            const angle = (index / unitTypes.length) * Math.PI * 2;
-            const spawnX = baseX + Math.cos(angle) * spawnRadius;
-            const spawnY = baseY + Math.sin(angle) * spawnRadius;
-            
-            const unit = UnitFactory.create(unitType, spawnX, spawnY, this.team);
-            unit.id = `ai_${unitType}_${this.team}_${index}_${Date.now()}`;
-            window.game.engine.addEntity(unit);
-            
-            // Assign initial defenders
-            this.tactics.baseDefenders.push(unit);
+        const spawnRadius = 180; // Larger radius for legendary bases
+        let currentPop = 0;
+        
+        unitComposition.forEach((unitType, index) => {
+            // Check population before spawning
+            const unitPopCost = this.getUnitPopulationCost(unitType);
+            if (currentPop + unitPopCost <= this.populationCap) {
+                const angle = (index / unitComposition.length) * Math.PI * 2;
+                const spawnX = baseX + Math.cos(angle) * spawnRadius;
+                const spawnY = baseY + Math.sin(angle) * spawnRadius;
+                
+                const unit = UnitFactory.create(unitType, spawnX, spawnY, this.team);
+                unit.id = `ai_${unitType}_${this.team}_${index}_${Date.now()}`;
+                window.game.engine.addEntity(unit);
+                
+                // Track population
+                currentPop += unitPopCost;
+                this.currentPopulation = currentPop;
+                
+                // Assign initial defenders
+                this.tactics.baseDefenders.push(unit);
+            }
         });
-    }
-    
-    initializeSuperNovaBase(aiIndex) {
-        console.log(`Initializing enhanced Super Nova AI base ${aiIndex} for team ${this.team}...`);
         
-        // Position AI bases randomly across the 6000x6000 map, but not too close to center
-        const centerX = 3000;
-        const centerY = 3000;
-        const minRadius = 1200; // Increased minimum distance from center for proper spacing
-        const maxRadius = 2700; // Reduced maximum to ensure they fit in map
-        
-        // Generate position with collision checking
-        let baseX, baseY, attempts = 0;
-        do {
-            const angle = Math.random() * Math.PI * 2;
-            const radius = minRadius + Math.random() * (maxRadius - minRadius);
-            baseX = centerX + Math.cos(angle) * radius;
-            baseY = centerY + Math.sin(angle) * radius;
-            attempts++;
-        } while (this.checkBaseOverlap(baseX, baseY, 600) && attempts < 50); // 600 unit minimum distance
-        
-        console.log(`Super Nova AI ${aiIndex} positioned at (${baseX.toFixed(0)}, ${baseY.toFixed(0)}) after ${attempts} attempts`);
-        
-        // Store this AI's base position for future building placement
-        this.basePosition = { x: baseX, y: baseY };
-        this.baseId = `supernova_base_${this.team}_${aiIndex}_${Date.now()}`;
-        
-        // Create AI base (HQ)
-        const base = BuildingFactory.create('base', baseX, baseY, this.team);
-        base.id = this.baseId;
-        base.isUnderConstruction = false;
-        window.game.engine.addEntity(base);
-        
-        // Create full base infrastructure with 2 of each building
-        this.createFullBaseInfrastructure(baseX, baseY, aiIndex);
-        
-        // Start with moderate resources for Super Nova mode
-        this.resources = {
-            credits: 600,
-            energy: 150,
-            materials: 300
-        };
-        
-        console.log(`Enhanced Super Nova AI base ${aiIndex} initialized at (${baseX.toFixed(0)}, ${baseY.toFixed(0)}) with full infrastructure`);
+        console.log(`Legendary AI: Spawned initial army with ${currentPop}/${this.populationCap} population`);
     }
     
     createFullBaseInfrastructure(baseX, baseY, aiIndex) {
@@ -290,34 +450,6 @@ class AIOpponent {
         console.log(`Created full infrastructure: 2 supply depots, 2 reactors, 2 barracks, 2 turrets for AI base ${aiIndex}`);
     }
     
-    checkBaseOverlap(newX, newY, minDistance) {
-        // Check against player base position
-        const playerBaseX = this.team === 'enemy' ? 3000 : 2500; // Adjust based on mode
-        const playerBaseY = this.team === 'enemy' ? 3000 : 2500;
-        
-        const distToPlayer = Math.sqrt((newX - playerBaseX) ** 2 + (newY - playerBaseY) ** 2);
-        if (distToPlayer < minDistance) {
-            return true; // Too close to player
-        }
-        
-        // Check against existing AI bases (if any exist)
-        if (window.game && window.game.engine) {
-            const existingBases = window.game.engine.entities.filter(entity => 
-                entity.constructor.name === 'Base' && 
-                entity.team === this.team
-            );
-            
-            for (const base of existingBases) {
-                const dist = Math.sqrt((newX - base.position.x) ** 2 + (newY - base.position.y) ** 2);
-                if (dist < minDistance) {
-                    return true; // Too close to existing AI base
-                }
-            }
-        }
-        
-        return false; // No overlap
-    }
-    
     start() {
         this.isActive = true;
         this.lastUpdateTime = Date.now();
@@ -334,6 +466,9 @@ class AIOpponent {
         if (!this.isActive || !window.game || !window.game.engine) return;
         
         const currentTime = Date.now();
+        
+        // Update building progress
+        this.updateBuildingProgress();
         
         // Only update AI at intervals to avoid spam
         if (currentTime - this.lastUpdateTime < this.updateInterval) return;
@@ -385,31 +520,52 @@ class AIOpponent {
         const currentTime = Date.now();
         if (currentTime - this.economy.lastBuildingTime < this.economy.buildingInterval) return;
         
-        // Check current resource buildings
-        const aiBuildings = this.getAIBuildings();
-        const supplyDepots = aiBuildings.filter(b => b instanceof SupplyDepot).length;
-        const reactors = aiBuildings.filter(b => b instanceof Reactor).length;
-        const barracks = aiBuildings.filter(b => b instanceof Barracks).length;
+        // Check current resource buildings (count ALL buildings including under construction and dead)
+        const allAIBuildings = this.getAIBuildings(); // Get all buildings
+        const completedBuildings = allAIBuildings.filter(b => !b.isUnderConstruction && !b.isDead);
+        const underConstructionBuildings = allAIBuildings.filter(b => b.isUnderConstruction && !b.isDead);
         
-        // Build based on priority and need (more aggressive in legendary mode)
-        if (this.isLegendaryMode) {
-            // LEGENDARY: Build massive infrastructure for overwhelming production
-            if (supplyDepots < 5) { // More supply depots
-                this.buildBuilding('supply');
-            } else if (reactors < 3) { // More reactors
-                this.buildBuilding('reactor');
-            } else if (barracks < 5) { // More barracks for massive production
-                this.buildBuilding('barracks');
-            }
-        } else {
-            // Normal build limits
-            if (supplyDepots < 2) {
-                this.buildBuilding('supply');
-            } else if (reactors < 2) {
-                this.buildBuilding('reactor');
-            } else if (barracks < 2) {
-                this.buildBuilding('barracks');
-            }
+        const supplyDepots = completedBuildings.filter(b => b instanceof SupplyDepot).length;
+        const reactors = completedBuildings.filter(b => b instanceof Reactor).length;
+        const barracks = completedBuildings.filter(b => b instanceof Barracks).length;
+        
+        const supplyUnderConstruction = underConstructionBuildings.filter(b => b instanceof SupplyDepot).length;
+        const reactorUnderConstruction = underConstructionBuildings.filter(b => b instanceof Reactor).length;
+        const barracksUnderConstruction = underConstructionBuildings.filter(b => b instanceof Barracks).length;
+        
+        const totalSupply = supplyDepots + supplyUnderConstruction;
+        const totalReactor = reactors + reactorUnderConstruction;
+        const totalBarracks = barracks + barracksUnderConstruction;
+        
+        console.log(`🤖 AI ECONOMY CHECK: Supply:${supplyDepots}+${supplyUnderConstruction}=${totalSupply}/2, Reactor:${reactors}+${reactorUnderConstruction}=${totalReactor}/2, Barracks:${barracks}+${barracksUnderConstruction}=${totalBarracks}/2`);
+        
+        // Log to single player logger
+        if (window.spLogger) {
+            window.spLogger.log('AI_ECONOMY', 'Economy check performed', {
+                aiId: this.aiId,
+                team: this.team,
+                buildings: {
+                    supply: { completed: supplyDepots, underConstruction: supplyUnderConstruction, total: totalSupply },
+                    reactor: { completed: reactors, underConstruction: reactorUnderConstruction, total: totalReactor },
+                    barracks: { completed: barracks, underConstruction: barracksUnderConstruction, total: totalBarracks }
+                },
+                allBuildingIds: allAIBuildings.map(b => ({ id: b.id, type: b.constructor.name, isDead: b.isDead, isUnderConstruction: b.isUnderConstruction }))
+            });
+        }
+        
+        // FIXED: Respect building limits - only rebuild to maintain the original 2-building limit
+        // Count both completed AND under construction buildings to prevent over-building
+        
+        // Only rebuild if we're below the intended 2-building limit (including under construction)
+        if (totalSupply < 2) {
+            console.log(`🤖 AI ECONOMY: Need to rebuild supply depot (${totalSupply}/2)`);
+            this.buildBuilding('supply');
+        } else if (totalReactor < 2) {
+            console.log(`🤖 AI ECONOMY: Need to rebuild reactor (${totalReactor}/2)`);
+            this.buildBuilding('reactor');
+        } else if (totalBarracks < 2) {
+            console.log(`🤖 AI ECONOMY: Need to rebuild barracks (${totalBarracks}/2)`);
+            this.buildBuilding('barracks');
         }
         
         this.economy.lastBuildingTime = currentTime;
@@ -425,7 +581,17 @@ class AIOpponent {
         
         if (availableBarracks.length === 0) return;
         
-        // In legendary mode, produce from ALL available barracks simultaneously
+        // FIXED: Check population limits before producing
+        const currentAIPopulation = this.getCurrentAIPopulation();
+        const maxAIPopulation = this.getMaxAIPopulation();
+        
+        // Don't produce if at or near population cap
+        if (currentAIPopulation >= maxAIPopulation) {
+            console.log(`AI production stopped: Population at capacity (${currentAIPopulation}/${maxAIPopulation})`);
+            return;
+        }
+        
+        // In legendary mode, produce from ALL available barracks simultaneously (if population allows)
         const barracksToUse = this.isLegendaryMode ? availableBarracks : [availableBarracks[0]];
         
         // Determine what to produce based on current army composition
@@ -463,13 +629,24 @@ class AIOpponent {
             }
         }
         
-        // Produce units from selected barracks
+        // Check if we have enough population space for the unit we want to produce
+        const unitCost = UnitFactory.getUnitCost(unitToProduce);
+        if (currentAIPopulation + unitCost.population > maxAIPopulation) {
+            console.log(`AI: Cannot produce ${unitToProduce} - would exceed population limit`);
+            return;
+        }
+        
+        // Produce units from selected barracks (respecting population limits)
         barracksToUse.forEach(barracks => {
-            this.produceUnit(unitToProduce, barracks);
+            // Double-check population before each production
+            const newCurrentPop = this.getCurrentAIPopulation();
+            if (newCurrentPop + unitCost.population <= maxAIPopulation) {
+                this.produceUnit(unitToProduce, barracks);
+            }
         });
         
         if (this.isLegendaryMode) {
-            console.log(`🔥 LEGENDARY: Producing ${unitToProduce} from ${barracksToUse.length} barracks simultaneously!`);
+            console.log(`🔥 LEGENDARY: Producing ${unitToProduce} from ${barracksToUse.length} barracks (Pop: ${currentAIPopulation}/${maxAIPopulation})`);
         }
         
         this.production.productionTimer = currentTime;
@@ -631,9 +808,28 @@ class AIOpponent {
     // Helper methods
     getAIBuildings() {
         if (!window.game || !window.game.engine) return [];
-        return window.game.engine.entities.filter(e => 
+        const buildings = window.game.engine.entities.filter(e => 
             e instanceof Building && e.team === this.team && !e.isDead
         );
+        
+        // Log building count periodically
+        if (window.spLogger && Math.random() < 0.1) { // 10% chance to log
+            window.spLogger.log('BUILDING_COUNT', `AI building inventory`, {
+                aiId: this.aiId,
+                team: this.team,
+                totalBuildings: buildings.length,
+                buildingDetails: buildings.map(b => ({
+                    id: b.id,
+                    type: b.constructor.name,
+                    position: { x: b.position.x, y: b.position.y },
+                    isDead: b.isDead,
+                    isUnderConstruction: b.isUnderConstruction,
+                    health: b.health
+                }))
+            });
+        }
+        
+        return buildings;
     }
     
     getAIUnits() {
@@ -652,7 +848,65 @@ class AIOpponent {
         return this.getAIBuildings().find(b => b.constructor.name === 'Base');
     }
     
+    getCurrentAIPopulation() {
+        // Calculate current AI population using the same method as the player
+        const aiUnits = this.getAIUnits();
+        
+        // Count existing units (use populationCost property like the player system)
+        const unitPopulation = aiUnits.reduce((total, unit) => total + (unit.populationCost || 1), 0);
+        
+        // Count units in production queues at barracks
+        let queuedPopulation = 0;
+        const aiBarracks = this.getAIBuildings().filter(b => b instanceof Barracks);
+        aiBarracks.forEach(barracks => {
+            if (barracks.productionQueue) {
+                queuedPopulation += barracks.productionQueue.reduce((total, item) => {
+                    return total + (item.cost && item.cost.population ? item.cost.population : 0);
+                }, 0);
+            }
+            // Also count currently producing unit
+            if (barracks.currentProduction) {
+                queuedPopulation += (barracks.currentProduction.cost && barracks.currentProduction.cost.population) 
+                    ? barracks.currentProduction.cost.population : 0;
+            }
+        });
+        
+        return unitPopulation + queuedPopulation;
+    }
+    
+    getMaxAIPopulation() {
+        // Calculate max AI population using the same system as the player
+        const aiBarracks = this.getAIBuildings().filter(b => 
+            b instanceof Barracks && !b.isUnderConstruction
+        );
+        
+        // Base population: 25 + 5 per barracks, max 50 (same as player)
+        const maxPopulation = Math.min(50, 25 + (aiBarracks.length * 5));
+        
+        return maxPopulation;
+    }
+    
+    getBuildingClassName(buildingType) {
+        // Convert building type string to actual class name
+        const typeMap = {
+            'supply': 'SupplyDepot',
+            'reactor': 'Reactor', 
+            'barracks': 'Barracks',
+            'turret': 'Turret'
+        };
+        return typeMap[buildingType] || buildingType;
+    }
+    
     buildBuilding(buildingType) {
+        // Log the build attempt
+        if (window.spLogger) {
+            window.spLogger.log('AI_BUILD', `Build attempt for ${buildingType}`, {
+                aiId: this.aiId,
+                team: this.team,
+                buildingType: buildingType
+            });
+        }
+        
         // Use stored base position if available (for legendary mode)
         let basePosition;
         if (this.basePosition) {
@@ -663,24 +917,79 @@ class AIOpponent {
             basePosition = aiBase.position;
         }
         
+        // First check: Count existing buildings of this type to prevent over-building  
+        // STRICT 2-BUILDING CAP for all building types (including queued buildings)
+        const existingBuildings = this.getAIBuildings().filter(b => 
+            b.constructor.name === this.getBuildingClassName(buildingType) && !b.isDead
+        );
+        
+        // Also count buildings currently in queue
+        const queuedBuildings = this.buildingQueue ? this.buildingQueue.filter(queuedBuilding => 
+            queuedBuilding.type === buildingType
+        ) : [];
+        
+        const totalCount = existingBuildings.length + queuedBuildings.length;
+        
+        if (totalCount >= 2) {
+            console.log(`🤖 AI BUILD BLOCKED: Already have/queued ${totalCount} ${buildingType} buildings (existing: ${existingBuildings.length}, queued: ${queuedBuildings.length}) - STRICT 2-BUILDING CAP`);
+            if (window.spLogger) {
+                window.spLogger.log('AI_BUILD', `Build blocked - strict 2-building cap`, {
+                    aiId: this.aiId,
+                    buildingType: buildingType,
+                    existingCount: existingBuildings.length,
+                    queuedCount: queuedBuildings.length,
+                    totalCount: totalCount,
+                    existingBuildings: existingBuildings.map(b => ({ id: b.id, isDead: b.isDead, isUnderConstruction: b.isUnderConstruction }))
+                });
+            }
+            return;
+        }
+        
         // Find a good position near base
         const buildPos = this.findBuildingPosition(basePosition, buildingType);
-        if (!buildPos) return;
+        if (!buildPos) {
+            console.log(`🤖 AI BUILD FAILED: No valid position found for ${buildingType}`);
+            if (window.spLogger) {
+                window.spLogger.log('AI_BUILD', `Build failed - no valid position`, {
+                    aiId: this.aiId,
+                    buildingType: buildingType,
+                    basePosition: basePosition
+                });
+            }
+            return;
+        }
         
         try {
             const building = BuildingFactory.create(buildingType, buildPos.x, buildPos.y, this.team);
             building.id = `ai_${buildingType}_${Date.now()}`;
             window.game.engine.addEntity(building);
-            console.log(`AI: Built ${buildingType} at (${buildPos.x}, ${buildPos.y})`);
+            console.log(`🤖 AI REBUILD: Built ${buildingType} at (${buildPos.x.toFixed(0)}, ${buildPos.y.toFixed(0)}) - rebuilding lost infrastructure`);
+            
+            if (window.spLogger) {
+                window.spLogger.log('AI_BUILD', `Build successful`, {
+                    aiId: this.aiId,
+                    buildingType: buildingType,
+                    buildingId: building.id,
+                    position: { x: buildPos.x, y: buildPos.y },
+                    team: this.team
+                });
+            }
         } catch (error) {
             console.error(`AI: Failed to build ${buildingType}:`, error);
+            if (window.spLogger) {
+                window.spLogger.log('AI_BUILD', `Build error`, {
+                    aiId: this.aiId,
+                    buildingType: buildingType,
+                    error: error.message
+                });
+            }
         }
     }
     
     findBuildingPosition(basePos, buildingType) {
         const attempts = 20;
-        const minDistance = 80;
-        const maxDistance = 200;
+        const minDistance = 80;  // Minimum distance from base
+        const maxDistance = 150; // Reduced from 200 to 150 - same as player building radius
         
         for (let i = 0; i < attempts; i++) {
             const angle = Math.random() * Math.PI * 2;
@@ -702,7 +1011,7 @@ class AIOpponent {
     
     isValidBuildingPosition(pos, buildingType) {
         const buildingSize = 80; // Standard building size
-        const buffer = 20;
+        const buffer = 60; // Increased to 60 pixels (3/4 of building size) for better spacing
         
         // Check world bounds
         if (pos.x - buildingSize/2 < 0 || pos.x + buildingSize/2 > window.game.engine.worldWidth ||
@@ -710,12 +1019,32 @@ class AIOpponent {
             return false;
         }
         
-        // Check collision with other buildings
-        const allBuildings = window.game.engine.entities.filter(e => e instanceof Building && !e.isDead);
+        // Check collision with other buildings (including dead ones that might not be cleaned up yet)
+        const allBuildings = window.game.engine.entities.filter(e => e instanceof Building);
         
         for (const building of allBuildings) {
             const distance = pos.distance(building.position);
-            if (distance < (buildingSize + building.width) / 2 + buffer) {
+            const requiredDistance = (buildingSize + (building.width || 80)) / 2 + buffer;
+            
+            if (distance < requiredDistance) {
+                console.log(`🤖 AI BUILD COLLISION: Position (${pos.x.toFixed(0)}, ${pos.y.toFixed(0)}) too close to ${building.constructor.name} at (${building.position.x.toFixed(0)}, ${building.position.y.toFixed(0)}) - distance: ${distance.toFixed(0)}, required: ${requiredDistance.toFixed(0)}`);
+                
+                if (window.spLogger) {
+                    window.spLogger.log('COLLISION', `Build position collision detected`, {
+                        buildingType: buildingType,
+                        attemptedPosition: { x: pos.x, y: pos.y },
+                        collidingBuilding: {
+                            id: building.id,
+                            type: building.constructor.name,
+                            position: { x: building.position.x, y: building.position.y },
+                            isDead: building.isDead,
+                            team: building.team
+                        },
+                        distance: distance,
+                        requiredDistance: requiredDistance
+                    });
+                }
+                
                 return false;
             }
         }

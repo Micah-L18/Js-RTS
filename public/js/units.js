@@ -17,7 +17,7 @@ class Unit {
         this.isDead = false;
         
         // Movement properties
-        this.maxSpeed = 4.5; // Increased base speed for all units
+        this.maxSpeed = 5.625; // 25% increase from 4.5 (4.5 * 1.25)
         this.acceleration = 25; // Increased base acceleration
         this.friction = 0.85; // Higher friction to slow down faster
         this.rotationSpeed = 3;
@@ -200,20 +200,27 @@ class Unit {
             const toBuildingVector = building.position.subtract(this.position);
             const distance = toBuildingVector.length();
             
-            // If too close to building, try to move away or around it
+            // If too close to building, push away from it instead of orbiting
             const buildingRadius = Math.max(building.width, building.height) / 2; // Use building dimensions
             const collisionBuffer = 25; // Larger buffer to match visual boundaries
             if (distance < this.radius + buildingRadius + collisionBuffer) {
-                // Calculate a perpendicular direction to go around the building
-                const perpendicular = new Vector2(-toBuildingVector.y, toBuildingVector.x).normalize();
-                const avoidanceForce = perpendicular.multiply(this.maxSpeed * 0.5);
+                // FIXED: Push directly away from building instead of perpendicular movement
+                // This prevents the spinning/orbiting behavior
+                const pushAwayForce = toBuildingVector.normalize().multiply(-this.maxSpeed * 0.8);
                 
-                // Apply avoidance force but also try to continue toward destination
-                const avoidancePosition = this.position.add(avoidanceForce.multiply(deltaTime / 1000));
+                // Move away from the building
+                const avoidancePosition = this.position.add(pushAwayForce.multiply(deltaTime / 1000));
                 finalPosition = avoidancePosition;
                 
                 // Reduce velocity when avoiding obstacles
-                this.velocity = this.velocity.multiply(0.7);
+                this.velocity = this.velocity.multiply(0.5);
+                
+                // If unit is stuck against building and has a destination, try to clear the destination
+                // and let the player re-order the unit
+                if (distance < this.radius + buildingRadius + 10) {
+                    this.destination = null;
+                    this.state = 'idle';
+                }
             } else {
                 finalPosition = newPosition;
             }
@@ -547,7 +554,7 @@ class Unit {
             
             // Reduce damage against buildings for balance
             if (target instanceof Building) {
-                damageToApply = Math.floor(damageToApply * 0.5); // 50% damage to buildings
+                damageToApply = Math.floor(damageToApply * 0.75); // 25% damage reduction instead of 50%
             }
             
             target.takeDamage(damageToApply, false, this); // Pass the attacker for auto-defense
@@ -671,7 +678,7 @@ class Marine extends Unit {
         this.health = this.maxHealth;
         this.damage = 25;
         this.attackRange = 100;
-        this.maxSpeed = 8.75; // 75% increase from 5.0 for infantry
+        this.maxSpeed = 10.9375; // 25% increase from 8.75 (8.75 * 1.25)
         this.acceleration = 52; // 75% increase from 30 for quicker response
         this.attackCooldown = 800;
         this.radius = 12;
@@ -694,7 +701,7 @@ class Warthog extends Unit {
         this.health = this.maxHealth;
         this.damage = 45; // 3x attack damage (was 15)
         this.attackRange = 120;
-        this.maxSpeed = 13.1; // 75% increase from 7.5 for fast vehicles
+        this.maxSpeed = 16.375; // 25% increase from 13.1 (13.1 * 1.25)
         this.acceleration = 70; // 75% increase from 40 for quick vehicle response
         this.attackCooldown = 600;
         this.radius = 20;
@@ -760,7 +767,7 @@ class Scorpion extends Unit {
         this.health = this.maxHealth;
         this.damage = 300; // 5x attack damage (was 60)
         this.attackRange = 150;
-        this.maxSpeed = 9.5; // Reduced from 13 - slower heavy tank
+        this.maxSpeed = 11.875; // 25% increase from 9.5 (9.5 * 1.25)
         this.attackCooldown = 6000; // 1/3 attack speed - 3x slower (was 2000)
         this.radius = 25;
         this.size = 45;

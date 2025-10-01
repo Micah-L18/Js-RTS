@@ -8,12 +8,15 @@ class InputHandler {
         this.game = game; // Reference to the main game instance
         
         // Mouse state
-        this.mousePos = new Vector2(0, 0);
+        this.mousePos = new Vector2(0, 0); // Device pixel coordinates for world conversion
+        this.mousePosCSS = new Vector2(0, 0); // CSS pixel coordinates for UI interaction
         this.worldMousePos = new Vector2(0, 0);
         this.isMouseDown = false;
         this.isDragging = false;
         this.dragStart = new Vector2(0, 0);
         this.dragEnd = new Vector2(0, 0);
+        this.dragStartCSS = new Vector2(0, 0); // CSS coordinates for drag distance calculation
+        this.dragEndCSS = new Vector2(0, 0);
         this.dragThreshold = 5;
         
         // Keyboard state
@@ -120,21 +123,24 @@ class InputHandler {
         const rect = this.canvas.getBoundingClientRect();
         const scrollSpeed = this.edgeScrollSpeed * (deltaTime / 1000);
         
-        if (this.mousePos.x < this.edgeScrollMargin) {
+        // Use CSS coordinates for edge scrolling comparison
+        if (this.mousePosCSS.x < this.edgeScrollMargin) {
             this.engine.moveCamera(-scrollSpeed, 0);
-        } else if (this.mousePos.x > rect.width - this.edgeScrollMargin) {
+        } else if (this.mousePosCSS.x > rect.width - this.edgeScrollMargin) {
             this.engine.moveCamera(scrollSpeed, 0);
         }
         
-        if (this.mousePos.y < this.edgeScrollMargin) {
+        if (this.mousePosCSS.y < this.edgeScrollMargin) {
             this.engine.moveCamera(0, -scrollSpeed);
-        } else if (this.mousePos.y > rect.height - this.edgeScrollMargin) {
+        } else if (this.mousePosCSS.y > rect.height - this.edgeScrollMargin) {
             this.engine.moveCamera(0, scrollSpeed);
         }
     }
     
     updateWorldMousePosition() {
-        this.worldMousePos = this.engine.screenToWorld(this.mousePos.x, this.mousePos.y);
+        // Use CSS coordinates for world conversion - the screenToWorld function
+        // will handle the proper conversion to world coordinates
+        this.worldMousePos = this.engine.screenToWorld(this.mousePosCSS.x, this.mousePosCSS.y);
     }
     
     onMouseDown(e) {
@@ -144,6 +150,7 @@ class InputHandler {
         this.updateWorldMousePosition(); // Update world coordinates
         this.isMouseDown = true;
         this.dragStart = this.mousePos.clone();
+        this.dragStartCSS = this.mousePosCSS.clone();
         this.multiSelect = e.ctrlKey || e.shiftKey;
         
         if (e.button === 0) { // Left click
@@ -161,11 +168,12 @@ class InputHandler {
         this.updateCursorForBuildingHover();
         
         if (this.isMouseDown && !this.clickedOnEntity) {
-            const distance = this.mousePos.distance(this.dragStart);
+            const distance = this.mousePosCSS.distance(this.dragStartCSS);
             
             if (distance > this.dragThreshold) {
                 this.isDragging = true;
                 this.dragEnd = this.mousePos.clone();
+                this.dragEndCSS = this.mousePosCSS.clone();
                 
                 // Update selection box
                 this.updateSelectionBox();
@@ -363,14 +371,16 @@ class InputHandler {
     updateMousePosition(e) {
         const rect = this.canvas.getBoundingClientRect();
         
-        // With device pixel ratio handling, we need to convert from CSS pixels to canvas pixels
-        const dpr = window.devicePixelRatio || 1;
-        
-        // Get mouse position in CSS pixels
+        // Get mouse position in CSS pixels (for UI interactions)
         const cssX = e.clientX - rect.left;
         const cssY = e.clientY - rect.top;
         
-        // Convert to canvas pixels (accounting for device pixel ratio)
+        // Store CSS coordinates for edge scrolling and UI
+        this.mousePosCSS.x = cssX;
+        this.mousePosCSS.y = cssY;
+        
+        // Store device pixel coordinates for world conversion
+        const dpr = window.devicePixelRatio || 1;
         this.mousePos.x = cssX * dpr;
         this.mousePos.y = cssY * dpr;
     }
@@ -378,8 +388,9 @@ class InputHandler {
     updateSelectionBox() {
         if (!this.isDragging) return;
         
-        const startWorld = this.engine.screenToWorld(this.dragStart.x, this.dragStart.y);
-        const endWorld = this.engine.screenToWorld(this.dragEnd.x, this.dragEnd.y);
+        // Use CSS coordinates for screen-to-world conversion
+        const startWorld = this.engine.screenToWorld(this.dragStartCSS.x, this.dragStartCSS.y);
+        const endWorld = this.engine.screenToWorld(this.dragEndCSS.x, this.dragEndCSS.y);
         
         this.selectionBox = {
             x: Math.min(startWorld.x, endWorld.x),
@@ -659,6 +670,7 @@ class InputHandler {
     render(ctx) {
         // Render selection box
         if (this.isDragging && this.selectionBox) {
+            // Convert world coordinates to screen coordinates for rendering
             const startScreen = this.engine.worldToScreen(this.selectionBox.x, this.selectionBox.y);
             const endScreen = this.engine.worldToScreen(
                 this.selectionBox.x + this.selectionBox.width,
@@ -666,7 +678,7 @@ class InputHandler {
             );
             
             ctx.save();
-            ctx.setTransform(1, 0, 0, 1, 0, 0); // Reset transformation
+            // No need to reset transform since we're already in screen space after engine.render
             
             ctx.strokeStyle = '#00ff00';
             ctx.fillStyle = 'rgba(0, 255, 0, 0.1)';

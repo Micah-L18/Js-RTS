@@ -4,6 +4,84 @@
     <meta charset="UTF-8">
     <title>Halo Wars JS - Single Player Campaign</title> 
     <link rel="stylesheet" href="css/styles.css">
+    
+    <!-- Define global functions early for onclick attributes -->
+    <script>
+        // Global variable for selected difficulty
+        let selectedDifficulty = 'normal';
+        // Make it accessible globally for AI code
+        window.selectedDifficulty = selectedDifficulty;
+        
+        // Define selectDifficulty function globally for onclick attributes
+        function selectDifficulty(difficulty) {
+            console.log('selectDifficulty called with:', difficulty);
+            selectedDifficulty = difficulty;
+            window.selectedDifficulty = difficulty; // Update window property too
+            
+            // Remove selected class from all difficulty buttons
+            document.querySelectorAll('.difficulty-btn').forEach(btn => {
+                btn.classList.remove('selected');
+            });
+            
+            // Add selected class to clicked button
+            const targetBtn = document.getElementById(difficulty + 'Btn');
+            if (targetBtn) {
+                targetBtn.classList.add('selected');
+                console.log('Selected:', difficulty);
+            }
+            
+            // Update current difficulty display
+            const currentDifficultyElement = document.getElementById('currentDifficulty');
+            if (currentDifficultyElement) {
+                currentDifficultyElement.textContent = difficulty.charAt(0).toUpperCase() + difficulty.slice(1);
+            }
+        }
+        
+        // Define startMissionBriefing function globally
+        function startMissionBriefing() {
+            console.log('Starting mission briefing...');
+            document.getElementById('campaignMenu').style.display = 'none';
+            document.getElementById('missionBriefing').style.display = 'block';
+            
+            let countdown = 3;
+            const countdownElement = document.getElementById('countdownTimer');
+            
+            const countdownInterval = setInterval(() => {
+                countdown--;
+                countdownElement.textContent = countdown;
+                
+                if (countdown <= 0) {
+                    clearInterval(countdownInterval);
+                    startSinglePlayerGame();
+                }
+            }, 1000);
+        }
+        
+        // Define startSinglePlayerGame function globally
+        function startSinglePlayerGame() {
+            console.log('Starting single-player game...');
+            
+            // Hide lobby interface and show game
+            document.getElementById('singlePlayerLobby').style.display = 'none';
+            
+            // Show game canvas and UI
+            document.getElementById('gameCanvas').style.display = 'block';
+            document.getElementById('gameUI').style.display = 'block';
+            
+            // Initialize game (this will be called from the main script later)
+            if (window.initializeSinglePlayerGame) {
+                window.initializeSinglePlayerGame();
+            } else {
+                console.log('Game initialization function not ready yet, will be called later');
+            }
+        }
+        
+        // Define goBackToMenu function globally
+        function goBackToMenu() {
+            console.log('Going back to main menu...');
+            window.location.href = 'index.html';
+        }
+    </script>
 </head>
 <body>
     <div id="gameContainer">
@@ -31,30 +109,25 @@
                         <div class="difficulty-selection">
                             <h3>🎯 Select Difficulty:</h3>
                             <div class="difficulty-buttons">
-                                <button id="easyBtn" class="difficulty-btn easy-btn">
+                                <button id="easyBtn" class="difficulty-btn easy-btn" onclick="selectDifficulty('easy')">
                                     <div class="difficulty-icon">😊</div>
                                     <div class="difficulty-name">Easy</div>
-                                    <div class="difficulty-desc">Slow AI attacks, smaller waves</div>
+                                    <div class="difficulty-desc">1 vs 1 - Single AI opponent</div>
                                 </button>
-                                <button id="normalBtn" class="difficulty-btn normal-btn selected">
+                                <button id="normalBtn" class="difficulty-btn normal-btn selected" onclick="selectDifficulty('normal')">
                                     <div class="difficulty-icon">😐</div>
                                     <div class="difficulty-name">Normal</div>
-                                    <div class="difficulty-desc">Balanced gameplay</div>
+                                    <div class="difficulty-desc">1 vs 2 - Two AI opponents</div>
                                 </button>
-                                <button id="hardBtn" class="difficulty-btn hard-btn">
+                                <button id="hardBtn" class="difficulty-btn hard-btn" onclick="selectDifficulty('hard')">
                                     <div class="difficulty-icon">😠</div>
                                     <div class="difficulty-name">Hard</div>
-                                    <div class="difficulty-desc">Aggressive AI, large waves</div>
+                                    <div class="difficulty-desc">1 vs 3 - Three AI opponents</div>
                                 </button>
-                                <button id="legendaryBtn" class="difficulty-btn legendary-btn">
+                                <button id="legendaryBtn" class="difficulty-btn legendary-btn" onclick="selectDifficulty('legendary')">
                                     <div class="difficulty-icon">💀</div>
                                     <div class="difficulty-name">Legendary</div>
                                     <div class="difficulty-desc">9 AIs surround you on 5km map - survive!</div>
-                                </button>
-                                <button id="superNovaBtn" class="difficulty-btn supernova-btn">
-                                    <div class="difficulty-icon">🌟</div>
-                                    <div class="difficulty-name">Super Nova</div>
-                                    <div class="difficulty-desc">1 vs 100! Start with 10,000 supplies!</div>
                                 </button>
                             </div>
                         </div>
@@ -67,8 +140,8 @@
                     </div>
                     
                     <div class="campaign-actions">
-                        <button id="startSinglePlayerBtn" class="lobby-btn primary large">🚀 Start Mission</button>
-                        <button id="backToMenuBtn" class="lobby-btn secondary">← Back to Main Menu</button>
+                        <button id="startSinglePlayerBtn" class="lobby-btn primary large" onclick="startMissionBriefing()">🚀 Start Mission</button>
+                                            <button id="backToMenuBtn" class="lobby-btn secondary large" onclick="goBackToMenu()">🏠 Back to Menu</button>
                     </div>
                 </div>
                 
@@ -232,6 +305,39 @@
                 <div id="selectedUnitsDisplay" style="display: none;"></div>
                 <div id="selectedBuildingDisplay" style="display: none;"></div>
             </div>
+            
+            <!-- Building Queue Panel -->
+            <div id="buildingQueuePanel" class="overlay-panel building-queue-panel" style="display: none;">
+                <div class="panel-title">🏗️ Building Queue</div>
+                
+                <!-- Currently Building Section -->
+                <div id="currentBuildingInfo" style="display: none;">
+                    <div class="current-building-section">
+                        <div class="section-title">Currently Building:</div>
+                        <div class="building-queue-item in-progress">
+                            <div class="queue-item-info">
+                                <div class="queue-item-icon">🏗️</div>
+                                <div class="queue-item-details">
+                                    <div id="currentBuildingName" class="queue-item-name">Building...</div>
+                                    <div class="progress-bar">
+                                        <div id="currentBuildingProgress" class="progress-fill" style="width: 0%"></div>
+                                    </div>
+                                </div>
+                            </div>
+                            <button class="queue-item-cancel">Cancel</button>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Queued Buildings Section -->
+                <div class="queued-section">
+                    <div class="section-title">Queue:</div>
+                    <div id="queuedBuildingsList" class="building-queue-list">
+                        <!-- Queued buildings will be added here -->
+                    </div>
+                    <div id="emptyQueueMessage" class="empty-message">No buildings queued</div>
+                </div>
+            </div>
         </div> <!-- End Game UI -->
     </div>
 
@@ -251,21 +357,69 @@
     <script>
         console.log('=== Single Player Mode ===');
         
-        let selectedDifficulty = 'normal';
+        // selectDifficulty function is already defined globally in head section
+        
+        // selectedDifficulty is already declared globally in head
         let aiOpponents = []; // Array to hold multiple AI opponents
+        window.aiOpponents = aiOpponents; // Make globally accessible for collision detection
         let gameStartTime = null; // Track when game started
         let missionStartTime = null;
         let gameStats = { unitsTrained: 0, enemiesDefeated: 0, buildingsBuilt: 0 };
         
         document.addEventListener('DOMContentLoaded', function() {
             console.log('Setting up single-player interface...');
+            console.log('Page loaded, DOM ready');
             
-            // Difficulty selection
-            document.getElementById('easyBtn').addEventListener('click', () => selectDifficulty('easy'));
-            document.getElementById('normalBtn').addEventListener('click', () => selectDifficulty('normal'));
-            document.getElementById('hardBtn').addEventListener('click', () => selectDifficulty('hard'));
-            document.getElementById('legendaryBtn').addEventListener('click', () => selectDifficulty('legendary'));
-            document.getElementById('superNovaBtn').addEventListener('click', () => selectDifficulty('supernova'));
+            // Test if basic JavaScript is working
+            console.log('Testing JavaScript functionality...');
+            
+            // Difficulty selection with debugging
+            const easyBtn = document.getElementById('easyBtn');
+            const normalBtn = document.getElementById('normalBtn');
+            const hardBtn = document.getElementById('hardBtn');
+            const legendaryBtn = document.getElementById('legendaryBtn');
+            
+            console.log('Found buttons:', { easyBtn, normalBtn, hardBtn, legendaryBtn });
+            
+            if (easyBtn) {
+                easyBtn.addEventListener('click', () => {
+                    console.log('Easy button clicked');
+                    selectDifficulty('easy');
+                });
+                console.log('Easy button event listener added');
+                
+                // Test click programmatically
+                setTimeout(() => {
+                    console.log('Testing programmatic click on easy button');
+                    easyBtn.click();
+                }, 1000);
+            }
+            
+            if (normalBtn) {
+                normalBtn.addEventListener('click', () => {
+                    console.log('Normal button clicked');
+                    selectDifficulty('normal');
+                });
+                console.log('Normal button event listener added');
+            }
+            
+            if (hardBtn) {
+                hardBtn.addEventListener('click', () => {
+                    console.log('Hard button clicked');
+                    selectDifficulty('hard');
+                });
+                console.log('Hard button event listener added');
+            }
+            
+            if (legendaryBtn) {
+                legendaryBtn.addEventListener('click', () => {
+                    console.log('Legendary button clicked');
+                    selectDifficulty('legendary');
+                });
+                console.log('Legendary button event listener added');
+            }
+
+            // Additional event listeners
             
             // Main buttons
             document.getElementById('startSinglePlayerBtn').addEventListener('click', startMissionBriefing);
@@ -274,33 +428,39 @@
             });
         });
         
-        function selectDifficulty(difficulty) {
-            selectedDifficulty = difficulty;
-            document.querySelectorAll('.difficulty-btn').forEach(btn => btn.classList.remove('selected'));
-            document.getElementById(difficulty + 'Btn').classList.add('selected');
-            document.getElementById('currentDifficulty').textContent = difficulty.charAt(0).toUpperCase() + difficulty.slice(1);
-        }
-        
-        function startMissionBriefing() {
-            document.getElementById('campaignMenu').style.display = 'none';
-            document.getElementById('missionBriefing').style.display = 'block';
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('Setting up single-player interface...');
             
-            let countdown = 3;
-            const countdownElement = document.getElementById('countdownTimer');
+            // Use onclick attributes as backup - add them directly to buttons
+            const buttons = [
+                { id: 'easyBtn', difficulty: 'easy' },
+                { id: 'normalBtn', difficulty: 'normal' },
+                { id: 'hardBtn', difficulty: 'hard' },
+                { id: 'legendaryBtn', difficulty: 'legendary' }
+            ];
             
-            const countdownInterval = setInterval(() => {
-                countdown--;
-                countdownElement.textContent = countdown;
-                
-                if (countdown <= 0) {
-                    clearInterval(countdownInterval);
-                    startSinglePlayerGame();
+            buttons.forEach(({ id, difficulty }) => {
+                const btn = document.getElementById(id);
+                if (btn) {
+                    // Multiple ways to ensure click works
+                    btn.onclick = () => selectDifficulty(difficulty);
+                    btn.addEventListener('click', () => selectDifficulty(difficulty));
+                    console.log(`Setup ${difficulty} button`);
                 }
-            }, 1000);
-        }
+            });
+            
+            // Main buttons - these functions are now defined globally in head
+            document.getElementById('startSinglePlayerBtn').addEventListener('click', startMissionBriefing);
+            document.getElementById('backToMenuBtn').addEventListener('click', () => {
+                window.location.href = 'index.html';
+            });
+        });
         
-        function startSinglePlayerGame() {
-            console.log('Starting single-player game...');
+        // Initialize single player game - called from global startSinglePlayerGame function
+        window.initializeSinglePlayerGame = function() {
+            console.log('=== STARTING SINGLE-PLAYER GAME ===');
+            console.log('Selected difficulty:', selectedDifficulty);
+            console.log('Window.selectedDifficulty:', window.selectedDifficulty);
             
             // Hide lobby, show game UI
             document.getElementById('singlePlayerLobby').style.display = 'none';
@@ -309,135 +469,216 @@
             missionStartTime = Date.now();
             gameStartTime = Date.now(); // Track game start time for settings modal
             
+            // Prevent auto-initialization by setting a temporary flag
+            window.singlePlayerInitializing = true;
+            
             // Create game instance
             window.game = new Game();
             window.game.isMultiplayer = false;
             window.game.playerTeam = 'player';
             
-            // Initialize game systems
-            window.game.init();
+            // Clear the flag
+            delete window.singlePlayerInitializing;
             
-            // Clear default entities and setup custom single-player state
-            window.game.engine.entities = [];
+            // Manually initialize game systems in the right order
+            console.log('Manually initializing game systems for single-player...');
             
-            // Set world size based on difficulty
+            // Ensure GameEngine is available
+            if (typeof GameEngine === 'undefined') {
+                console.error('GameEngine not defined! Waiting for scripts to load...');
+                setTimeout(() => window.initializeSinglePlayerGame(), 100);
+                return;
+            }
+            
+            // Create GameEngine first
+            window.game.engine = new GameEngine();
+            
+            // Set world size based on difficulty BEFORE creating entities
             if (selectedDifficulty === 'legendary') {
                 window.game.engine.setWorldSize(5000, 5000);
-                console.log('Legendary mode: World size set to 5000x5000 with updated camera bounds');
+                console.log('✓ Legendary mode: World size set to 5000x5000 with updated camera bounds');
                 
                 // Show enemy base counter for legendary mode
                 document.getElementById('enemyBaseCounter').style.display = 'block';
                 document.getElementById('totalBases').textContent = '9';
                 document.getElementById('basesDestroyed').textContent = '0';
-            } else if (selectedDifficulty === 'supernova') {
-                window.game.engine.setWorldSize(6000, 6000);
-                console.log('Super Nova mode: World size set to 6000x6000 with updated camera bounds');
+            } else if (selectedDifficulty === 'hard') {
+                // Hide counter for other difficulties
+                document.getElementById('enemyBaseCounter').style.display = 'none';
                 
-                // Show enemy base counter for supernova mode
-                document.getElementById('enemyBaseCounter').style.display = 'block';
-                document.getElementById('totalBases').textContent = '100';
-                document.getElementById('basesDestroyed').textContent = '0';
+                // Larger map for 1v3 scenario
+                window.game.engine.setWorldSize(3000, 3000);
+                console.log('✓ Hard mode: World size set to 3000x3000');
+            } else if (selectedDifficulty === 'normal') {
+                // Hide counter for other difficulties
+                document.getElementById('enemyBaseCounter').style.display = 'none';
+                
+                // Medium map for 1v2 scenario
+                window.game.engine.setWorldSize(2500, 2500);
+                console.log('✓ Normal mode: World size set to 2500x2500');
             } else {
                 // Hide counter for other difficulties
                 document.getElementById('enemyBaseCounter').style.display = 'none';
+                
+                // Compact map for 1v1 scenario
+                window.game.engine.setWorldSize(2000, 2000);
+                console.log('✓ Easy mode: World size set to 2000x2000');
             }
             
+            // Initialize other systems
+            window.game.resources = new ResourceManager();
+            window.game.uiRenderer = new UIRenderer();
+            window.game.inputHandler = new InputHandler(window.game.engine, window.game);
+            
+            // Set up UI event handlers
+            window.game.setupUIHandlers();
+            
+            // Initialize minimap with proper aspect ratio
+            window.game.initializeMinimap();
+            
+            window.game.isInitialized = true;
+            
+            // Setup our custom single-player state
             setupSinglePlayerGameState();
-
+            
             // Initialize AI opponents based on difficulty
+            console.log('=== INITIALIZING AI OPPONENTS ===');
+            console.log('Difficulty:', selectedDifficulty);
+            
             if (selectedDifficulty === 'legendary') {
+                console.log('Setting up legendary mode with 9 AI opponents');
                 // Create 9 individual AI opponents on the same team for legendary mode
                 for (let i = 0; i < 9; i++) {
                     const aiOpponent = new AIOpponent('enemy', `legendary_ai_${i}`); // Same team, unique IDs
                     aiOpponent.setDifficulty(selectedDifficulty);
                     aiOpponent.aiIndex = i; // For unique positioning around the circle
                     aiOpponents.push(aiOpponent);
-                    console.log(`Created individual AI opponent ${i + 1} with ID: ${aiOpponent.aiId}`);
+                    console.log(`✓ Created legendary AI opponent ${i + 1} with ID: ${aiOpponent.aiId}`);
                 }
                 
                 // Initialize all AI bases with delay
                 setTimeout(() => {
+                    console.log('Initializing legendary AI bases...');
                     aiOpponents.forEach((ai, index) => {
                         setTimeout(() => {
                             ai.initializeLegendaryBase(index);
                             ai.start();
-                            console.log(`AI opponent ${index + 1} started on team 'enemy'`);
+                            console.log(`✓ AI opponent ${index + 1} started on team 'enemy'`);
                         }, index * 500); // Stagger initialization
                     });
                 }, 1000);
                 
-            } else if (selectedDifficulty === 'supernova') {
-                // Create 100 individual AI opponents for Super Nova mode
-                for (let i = 0; i < 100; i++) {
-                    const aiOpponent = new AIOpponent('enemy', `supernova_ai_${i}`);
-                    aiOpponent.setDifficulty('hard'); // Use hard difficulty AI behavior
-                    aiOpponent.aiIndex = i;
-                    aiOpponents.push(aiOpponent);
-                    console.log(`Created Super Nova AI opponent ${i + 1} with ID: ${aiOpponent.aiId}`);
+            } else {
+                // Create multiple AI opponents based on difficulty
+                let aiCount = 1; // Default for easy
+                if (selectedDifficulty === 'normal') {
+                    aiCount = 2;
+                } else if (selectedDifficulty === 'hard') {
+                    aiCount = 3;
                 }
                 
-                // Initialize all AI bases with delay
+                console.log(`Setting up ${selectedDifficulty} mode with ${aiCount} AI opponents`);
+                
+                for (let i = 0; i < aiCount; i++) {
+                    const aiOpponent = new AIOpponent('enemy', `${selectedDifficulty}_ai_${i}`);
+                    aiOpponent.setDifficulty(selectedDifficulty);
+                    aiOpponent.aiIndex = i;
+                    aiOpponents.push(aiOpponent);
+                    console.log(`✓ Created ${selectedDifficulty} AI opponent ${i + 1} with ID: ${aiOpponent.aiId}`);
+                }
+                
                 setTimeout(() => {
+                    console.log(`Initializing ${selectedDifficulty} AI bases...`);
                     aiOpponents.forEach((ai, index) => {
                         setTimeout(() => {
-                            ai.initializeSuperNovaBase(index);
+                            ai.initializeBase();
                             ai.start();
-                            console.log(`Super Nova AI opponent ${index + 1} started on team 'enemy'`);
-                        }, index * 50); // Faster stagger for 100 AIs
+                            console.log(`✓ ${selectedDifficulty} AI opponent ${index + 1} started`);
+                        }, index * 300); // Stagger initialization
                     });
-                }, 1000);
-                
-            } else {
-                // Single AI opponent for other difficulties
-                const aiOpponent = new AIOpponent('enemy');
-                aiOpponent.setDifficulty(selectedDifficulty);
-                aiOpponents.push(aiOpponent);
-                
-                setTimeout(() => {
-                    aiOpponent.initializeBase();
-                    aiOpponent.start();
-                    console.log('AI opponent started');
                 }, 1000);
             }
 
-            // Start AI updates
-            setInterval(() => {
-                if (aiOpponents.length > 0 && window.game) {
-                    aiOpponents.forEach(ai => {
-                        if (ai) ai.update(16);
-                    });
-                }
-            }, 16);
-            
-            // Start game state updates for all modes
-            setInterval(() => {
-                if (window.game && window.game.engine) {
-                    if (selectedDifficulty === 'legendary' || selectedDifficulty === 'supernova') {
-                        updateEnemyBaseCounter();
+            // Start AI updates with performance-optimized intervals
+            setTimeout(() => {
+                console.log('Starting AI update loop...');
+                setInterval(() => {
+                    if (aiOpponents.length > 0 && window.game) {
+                        aiOpponents.forEach(ai => {
+                            if (ai) {
+                                // Use slower update intervals for better performance
+                                const updateDelta = 100;
+                                ai.update(updateDelta);
+                            }
+                        });
                     }
-                    checkPlayerDefeat(); // Check for defeat in all modes
-                }
-            }, 1000); // Update every second
+                }, 1000); // Update every second for performance
+                
+                // Start game state monitoring for victory/defeat conditions
+                setInterval(() => {
+                    if (window.game && window.game.engine) {
+                        if (selectedDifficulty === 'legendary') {
+                            updateEnemyBaseCounter();
+                        }
+                        checkPlayerDefeat(); // Check for defeat in all modes
+                    }
+                }, 1000); // Update every second
+            }, 2000);
             
-            console.log('Single-player game started successfully');
+            // Start the game
+            window.game.start();
+            
+            console.log('=== SINGLE-PLAYER GAME SETUP COMPLETE ===');
+            
+            // Add debug function for testing
+            window.debugGameState = function() {
+                console.log('=== CURRENT GAME STATE DEBUG ===');
+                console.log('Selected Difficulty:', selectedDifficulty);
+                console.log('World Size:', window.game.engine.worldWidth, 'x', window.game.engine.worldHeight);
+                console.log('AI Opponents Count:', aiOpponents.length);
+                console.log('Total Entities:', window.game.engine.entities.length);
+                
+                // Find player base
+                const playerBase = window.game.engine.entities.find(e => e.team === 'player' && e.type === 'base');
+                if (playerBase) {
+                    console.log('Player Base Position:', playerBase.position);
+                }
+                
+                // Find AI bases
+                const aiBases = window.game.engine.entities.filter(e => e.team === 'enemy' && e.type === 'base');
+                console.log('AI Bases:', aiBases.length);
+                aiBases.forEach((base, i) => {
+                    console.log(`  AI Base ${i + 1}:`, base.position);
+                });
+                
+                console.log('Enemy Base Counter Visible:', document.getElementById('enemyBaseCounter').style.display !== 'none');
+                console.log('=== END DEBUG ===');
+            };
         }
         
         function setupSinglePlayerGameState() {
             let playerBaseX, playerBaseY;
             
+            // Define unique positioning for each difficulty
             if (selectedDifficulty === 'legendary') {
                 // Position player in the center of the 5000x5000 map
                 playerBaseX = 2500; // Center of 5000x5000 map
                 playerBaseY = 2500;
-            } else if (selectedDifficulty === 'supernova') {
-                // Position player in the center of the 6000x6000 map for Super Nova
-                playerBaseX = 3000; // Center of 6000x6000 map
-                playerBaseY = 3000;
+            } else if (selectedDifficulty === 'hard') {
+                // Hard: 3000x3000 map - player in southwest corner
+                playerBaseX = 400;
+                playerBaseY = 2200;
+            } else if (selectedDifficulty === 'normal') {
+                // Normal: 2500x2500 map - player in bottom center
+                playerBaseX = 1250;
+                playerBaseY = 2000;
             } else {
-                // Standard positioning for other difficulties  
-                playerBaseX = 200;
-                playerBaseY = 800;
+                // Easy: 2000x2000 map - player in bottom left
+                playerBaseX = 300;
+                playerBaseY = 1500;
             }
+            
+            console.log(`Setting up player base for ${selectedDifficulty} mode at (${playerBaseX}, ${playerBaseY})`);
             
             // Create player base
             const playerBase = BuildingFactory.create('base', playerBaseX, playerBaseY, 'player');
@@ -462,22 +703,109 @@
                 window.game.engine.addEntity(marine);
             }
             
-            // Give extra resources for Super Nova mode
-            if (selectedDifficulty === 'supernova') {
-                // Add 9000 more supplies (game starts with 1000, so total will be 10000)
-                setTimeout(() => {
-                    if (window.game && window.game.addResources) {
-                        window.game.addResources(9000, 0); // Add 9000 supplies, 0 power
-                        console.log('Super Nova mode: Player granted 10,000 supplies!');
-                    }
-                }, 100); // Small delay to ensure game is fully initialized
-            }
-            
             // Position camera to show player base
             window.game.engine.setCameraPosition(playerBaseX - 300, playerBaseY - 300);
             
-            console.log(`Player base created at (${playerBaseX}, ${playerBaseY})`);
-            console.log(`Total entities: ${window.game.engine.entities.length}`);
+            // Add map-specific features based on difficulty
+            addMapFeatures(selectedDifficulty, playerBaseX, playerBaseY);
+            
+            console.log(`✓ Player base created at (${playerBaseX}, ${playerBaseY})`);
+            console.log(`✓ Total entities: ${window.game.engine.entities.length}`);
+        }
+        
+        function addMapFeatures(difficulty, playerBaseX, playerBaseY) {
+            // Add strategic elements and terrain features based on difficulty
+            if (difficulty === 'easy') {
+                // Easy: Simple 1v1 map with basic resources
+                addResourceDeposits([
+                    { x: playerBaseX + 200, y: playerBaseY - 150, type: 'energy' },
+                    { x: 1400, y: 600, type: 'materials' }, // Near AI base
+                    { x: 1000, y: 1000, type: 'credits' }   // Center contested
+                ]);
+                
+            } else if (difficulty === 'normal') {
+                // Normal: 2v1 map with strategic choke points
+                addResourceDeposits([
+                    { x: playerBaseX - 200, y: playerBaseY - 200, type: 'energy' },
+                    { x: 1250, y: 1250, type: 'credits' },   // Center contested
+                    { x: 1900, y: 800, type: 'materials' },  // Near AI base 1
+                    { x: 600, y: 1200, type: 'energy' },     // Strategic position
+                    { x: 2200, y: 1800, type: 'materials' }  // Near AI base 2
+                ]);
+                
+                // Add defensive barriers
+                addBarriers([
+                    { x: 1250, y: 1500, width: 200, height: 50 }, // Central choke point
+                    { x: 800, y: 800, width: 100, height: 100 }   // Strategic cover
+                ]);
+                
+            } else if (difficulty === 'hard') {
+                // Hard: 3v1 map with multiple contested areas
+                addResourceDeposits([
+                    { x: playerBaseX - 150, y: playerBaseX - 150, type: 'energy' },
+                    { x: 1500, y: 1500, type: 'credits' },   // Center contested
+                    { x: 2200, y: 800, type: 'materials' },  // Near AI base 1
+                    { x: 800, y: 800, type: 'materials' },   // Near AI base 2
+                    { x: 1500, y: 2200, type: 'energy' },    // Near AI base 3
+                    { x: 1200, y: 1200, type: 'credits' },   // Secondary contested
+                    { x: 1800, y: 1800, type: 'energy' }     // Third contested
+                ]);
+                
+                // Add multiple defensive positions
+                addBarriers([
+                    { x: 1500, y: 1200, width: 150, height: 50 }, // North barrier
+                    { x: 1200, y: 1500, width: 50, height: 150 }, // West barrier
+                    { x: 1800, y: 1500, width: 50, height: 150 }, // East barrier
+                    { x: 900, y: 900, width: 100, height: 100 },   // Strategic cover 1
+                    { x: 2100, y: 2100, width: 100, height: 100 } // Strategic cover 2
+                ]);
+                
+            } else if (difficulty === 'legendary') {
+                // Legendary: Massive 9v1 map with rich center and defended outer ring
+                addResourceDeposits([
+                    // Central resource cluster (heavily contested)
+                    { x: 2500, y: 2300, type: 'credits' },
+                    { x: 2700, y: 2500, type: 'energy' },
+                    { x: 2300, y: 2700, type: 'materials' },
+                    { x: 2600, y: 2600, type: 'credits' },
+                    { x: 2400, y: 2400, type: 'energy' },
+                    
+                    // Ring of resources near AI bases
+                    { x: 4000, y: 2500, type: 'materials' },
+                    { x: 3500, y: 1000, type: 'energy' },
+                    { x: 2500, y: 750, type: 'credits' },
+                    { x: 1500, y: 1000, type: 'materials' },
+                    { x: 1000, y: 2500, type: 'energy' },
+                    { x: 1500, y: 4000, type: 'credits' },
+                    { x: 2500, y: 4250, type: 'materials' },
+                    { x: 3500, y: 4000, type: 'energy' },
+                    { x: 4000, y: 3000, type: 'credits' }
+                ]);
+                
+                // Add defensive fortifications around the center
+                addBarriers([
+                    { x: 2200, y: 2200, width: 200, height: 50 },
+                    { x: 2600, y: 2200, width: 200, height: 50 },
+                    { x: 2200, y: 2600, width: 50, height: 200 },
+                    { x: 2750, y: 2600, width: 50, height: 200 }
+                ]);
+            }
+        }
+        
+        function addResourceDeposits(deposits) {
+            deposits.forEach((deposit, index) => {
+                // Create visual resource deposit markers (these would be implemented as entities)
+                console.log(`Adding ${deposit.type} deposit at (${deposit.x}, ${deposit.y})`);
+                // TODO: Implement actual resource deposit entities when resource system is expanded
+            });
+        }
+        
+        function addBarriers(barriers) {
+            barriers.forEach((barrier, index) => {
+                // Create defensive barrier/terrain objects
+                console.log(`Adding barrier at (${barrier.x}, ${barrier.y}) size ${barrier.width}x${barrier.height}`);
+                // TODO: Implement actual barrier entities for strategic positioning
+            });
         }
 
         // Settings Modal Functions
@@ -507,7 +835,7 @@
         
         let destroyedBasesCount = 0; // Track destroyed bases
         let allBasesSpawned = false; // Track if all bases have been spawned
-        let expectedBases = 9; // Expected number of AI bases (9 for legendary, 100 for supernova)
+        let expectedBases = 9; // Expected number of AI bases for legendary mode
         let gameEnded = false; // Prevent multiple game end triggers
         
         function checkPlayerDefeat() {
@@ -527,8 +855,6 @@
                     let difficultyText;
                     if (selectedDifficulty === 'legendary') {
                         difficultyText = 'LEGENDARY MODE';
-                    } else if (selectedDifficulty === 'supernova') {
-                        difficultyText = 'SUPER NOVA MODE';
                     } else {
                         difficultyText = selectedDifficulty.toUpperCase();
                     }
@@ -539,7 +865,7 @@
         }
         
         function updateEnemyBaseCounter() {
-            if ((selectedDifficulty !== 'legendary' && selectedDifficulty !== 'supernova') || !window.game || !window.game.engine) return;
+            if (selectedDifficulty !== 'legendary' || !window.game || !window.game.engine) return;
             
             // Check for player defeat first
             checkPlayerDefeat();
@@ -558,8 +884,7 @@
             if (!allBasesSpawned) {
                 if (aliveEnemyBases.length >= expectedBases) {
                     allBasesSpawned = true;
-                    const modeText = selectedDifficulty === 'supernova' ? '100' : '9';
-                    console.log(`All ${modeText} enemy bases have spawned - base counter now active`);
+                    console.log(`All 9 enemy bases have spawned - base counter now active`);
                 } else {
                     // Still waiting for bases to spawn
                     document.getElementById('basesDestroyed').textContent = '0';
@@ -580,8 +905,6 @@
                     let difficultyText;
                     if (selectedDifficulty === 'legendary') {
                         difficultyText = 'LEGENDARY MODE';
-                    } else if (selectedDifficulty === 'supernova') {
-                        difficultyText = 'SUPER NOVA MODE';
                     } else {
                         difficultyText = selectedDifficulty.toUpperCase();
                     }
