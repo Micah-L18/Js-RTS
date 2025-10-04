@@ -166,21 +166,7 @@ class Game {
             console.warn('Minimap canvas not found');
         }
         
-        // Action buttons
-        const stopBtn = document.getElementById('stopBtn');
-        const holdBtn = document.getElementById('holdBtn');
-        
-        if (stopBtn) {
-            stopBtn.addEventListener('click', () => {
-                this.handleUnitAction('stop');
-            });
-        }
-        
-        if (holdBtn) {
-            holdBtn.addEventListener('click', () => {
-                this.handleUnitAction('hold');
-            });
-        }
+        // Action buttons removed - no longer using command panel
 
         // Modal event handlers
         this.setupModalHandlers();
@@ -336,8 +322,18 @@ class Game {
         
         if (buildingType === 'Base') {
             document.getElementById('hqModal').style.display = 'flex';
+            // Ensure HQ modal handlers are setup
+            if (typeof setupHQModalHandlers === 'function') {
+                setupHQModalHandlers();
+            }
         } else if (buildingType === 'Barracks') {
-            document.getElementById('barracksModal').style.display = 'flex';
+            const barracksModal = document.getElementById('barracksModal');
+            if (barracksModal) {
+                barracksModal.style.display = 'flex';
+            } else {
+                console.warn('Barracks modal not found - showing basic info');
+                this.showMessage('Barracks: Produces marine units');
+            }
         }
     }
     
@@ -437,29 +433,15 @@ class Game {
                 this.engine.setCameraPosition(cameraPos.x, cameraPos.y);
                 
             } else {
-                // Single player initialization (original)
-                const base = new Base(200, 200, 'player');
-                base.isUnderConstruction = false;
-                this.engine.addEntity(base);
+                // Single player initialization - bases are handled by single-player.html
+                // Player base is created in setupSinglePlayerGameState()
+                // Enemy bases are created by AI opponents
+                console.log('Single-player mode: skipping base creation (handled by single-player.html)');
                 
-                const marine1 = new Marine(150, 280, 'player');
-                const marine2 = new Marine(180, 280, 'player');
-                this.engine.addEntity(marine1);
-                this.engine.addEntity(marine2);
+                // NOTE: Player base and enemy bases are now handled by single-player.html
+                // This prevents duplicate bases and ensures proper positioning
                 
-                if (typeof Warthog !== 'undefined') {
-                    const warthog = new Warthog(250, 280, 'player');
-                    this.engine.addEntity(warthog);
-                }
-                
-                const enemyBase = new Base(1800, 1200, 'enemy');
-                enemyBase.isUnderConstruction = false;
-                this.engine.addEntity(enemyBase);
-                
-                // Enemy AI starts with base only - no starting units
-                // AI will build units through normal production
-                
-                this.engine.setCameraPosition(200, 200);
+                // Camera will be positioned by single-player.html after player base creation
             }
             
             console.log('Initial game state created successfully');
@@ -1205,37 +1187,55 @@ class Game {
         );
         const worldPos = this.engine.screenToWorld(mousePos.x, mousePos.y);
         
-        // Snap to grid for better placement (optional - can be removed if unwanted)
-        const gridSize = 25; // Half of visual grid for better precision
-        const snappedX = Math.round(worldPos.x / gridSize) * gridSize;
-        const snappedY = Math.round(worldPos.y / gridSize) * gridSize;
-        const snappedPos = new Vector2(snappedX, snappedY);
+        // Find nearest building spot
+        const buildingSpot = window.baseLayoutManager.findBuildingSpot('player', worldPos.x, worldPos.y, buildingType);
         
-        // Check if position is valid (not overlapping other buildings)
-        if (this.isValidBuildingPosition(snappedPos, buildingType)) {
-            // Spend resources and add to queue
-            this.resources.spendResources(cost.supplies, cost.power);
+        if (!buildingSpot) {
+            console.log('❌ No available building spots for', buildingType);
             
-            // Add building to queue
-            this.addBuildingToQueue({
+            // Show appropriate message
+            if (buildingType === 'turret') {
+                this.showMessage('No turret spots available!', 'error');
+            } else {
+                const layout = window.baseLayoutManager.getBaseLayout('player');
+                const availableSlots = layout ? layout.getAvailableBuildingSlots() : 0;
+                const occupiedSlots = layout ? layout.buildingSpots.filter(s => s.isUnlocked && s.isOccupied).length : 0;
+                
+                if (availableSlots === occupiedSlots) {
+                    this.showMessage(`All ${availableSlots} building spots occupied! Upgrade base for more slots.`, 'error');
+                } else {
+                    this.showMessage('No building spots available!', 'error');
+                }
+            }
+            this.exitBuildingPlacement();
+            return;
+        }
+        
+        // Use the spot's position for building placement
+        const buildingData = {
+            type: buildingType,
+            position: buildingSpot.position,
+            cost: cost,
+            team: 'player',
+            spot: buildingSpot
+        };
+        
+        // Reserve the spot
+        buildingSpot.occupy(null); // Will be set to actual building when constructed
+        
+        // Spend resources and add to queue
+        this.resources.spendResources(cost.supplies, cost.power);
+        this.addBuildingToQueue(buildingData);
+        
+        console.log(`${buildingType} queued for construction at spot ${buildingSpot.spotId}`);
+        
+        // Send multiplayer action
+        if (this.isMultiplayer) {
+            this.sendMultiplayerAction('buildingQueue', {
                 type: buildingType,
-                position: { x: snappedPos.x, y: snappedPos.y },
-                cost: cost,
+                position: { x: buildingSpot.position.x, y: buildingSpot.position.y },
                 team: this.playerTeam
             });
-            
-            console.log(`${buildingType} queued for construction at (${Math.round(snappedPos.x)}, ${Math.round(snappedPos.y)})`);
-            
-            // Send multiplayer action
-            if (this.isMultiplayer) {
-                this.sendMultiplayerAction('buildingQueue', {
-                    type: buildingType,
-                    position: { x: snappedPos.x, y: snappedPos.y },
-                    team: this.playerTeam
-                });
-            }
-        } else {
-            console.log('Invalid building position');
         }
         
         // Exit building placement mode
@@ -1329,6 +1329,11 @@ class Game {
     addBuildingToQueue(buildingData) {
         // Check building limits before adding to queue
         if (!this.checkBuildingLimits(buildingData.type)) {
+            // Release the reserved spot
+            if (buildingData.spot) {
+                buildingData.spot.vacate();
+            }
+            
             // Show error message to player
             this.showBuildingLimitMessage(buildingData.type);
             return false;
@@ -1339,7 +1344,13 @@ class Game {
         building.isQueued = true; // Mark as queued (not yet under construction)
         building.isUnderConstruction = false;
         building.isActive = false; // Queued buildings are inactive until construction starts
+        building.buildingSpot = buildingData.spot; // Reference to the spot
         this.engine.addEntity(building);
+        
+        // Update the spot reference
+        if (buildingData.spot) {
+            buildingData.spot.occupy(building);
+        }
         
         // Store the building entity reference in the queue data
         buildingData.buildingEntity = building;
@@ -1611,6 +1622,12 @@ class Game {
             const canceledBuilding = this.buildingQueue[index];
             console.log('Canceling queued building:', canceledBuilding.type);
             
+            // Release the building spot
+            if (canceledBuilding.spot) {
+                canceledBuilding.spot.vacate();
+                console.log('Released building spot:', canceledBuilding.spot.spotId);
+            }
+            
             // Remove the actual building entity from the world
             if (canceledBuilding.buildingEntity && this.engine) {
                 console.log('Removing building entity from world:', canceledBuilding.buildingEntity.id);
@@ -1635,30 +1652,72 @@ class Game {
     
     // Building limit checks
     canBuildMoreBuildings() {
-        // No building limits in legendary mode
-        if (window.selectedDifficulty === 'legendary') {
-            return true;
+        // Check available building spots instead of hardcoded limit
+        const layout = window.baseLayoutManager.getBaseLayout('player');
+        if (!layout) {
+            console.log('DEBUG: No layout found for player');
+            return false;
         }
         
-        const playerBuildings = this.engine.entities.filter(entity => 
-            entity.team === 'player' && 
-            entity.type && 
-            ['supply', 'barracks', 'reactor', 'base'].includes(entity.type)
+        // Clean up any invalid spot occupations first
+        let cleanedSpots = 0;
+        layout.buildingSpots.forEach(spot => {
+            if (spot.cleanupInvalidOccupation()) {
+                cleanedSpots++;
+            }
+        });
+        
+        if (cleanedSpots > 0) {
+            console.log(`DEBUG: Cleaned up ${cleanedSpots} invalid spot occupations`);
+        }
+        
+        const availableBuildingSpots = layout.buildingSpots.filter(spot => 
+            spot.isUnlocked && !spot.isOccupied
         );
-        return playerBuildings.length < 7; // Maximum 7 buildings per base
+        
+        console.log('DEBUG: Building spots status:');
+        layout.buildingSpots.forEach((spot, i) => {
+            console.log(`  Spot ${i}: unlocked=${spot.isUnlocked}, occupied=${spot.isOccupied}, occupiedBy=${spot.occupiedBy?.constructor.name || 'none'}`);
+        });
+        console.log(`DEBUG: Available building spots: ${availableBuildingSpots.length}`);
+        
+        return availableBuildingSpots.length > 0;
+    }
+    
+    // Debug method for console inspection
+    debugBuildingState() {
+        console.log('=== GAME BUILDING STATE DEBUG ===');
+        console.log(`Current building queue length: ${this.buildingQueue.length}`);
+        console.log(`Currently building: ${this.currentlyBuilding ? this.currentlyBuilding.data.type : 'none'}`);
+        
+        const playerBuildings = this.engine.entities.filter(entity => 
+            entity instanceof Building && entity.team === 'player'
+        );
+        
+        console.log('\nPlayer Buildings:');
+        playerBuildings.forEach(building => {
+            const status = building.isQueued ? 'QUEUED' : 
+                          building.isUnderConstruction ? 'BUILDING' : 'COMPLETED';
+            console.log(`  ${building.constructor.name} (${building.id}): ${status} at (${building.position.x}, ${building.position.y})`);
+            if (building.buildingSpot) {
+                console.log(`    Associated with spot: ${building.buildingSpot.spotId}`);
+            }
+        });
+        
+        this.canBuildMoreBuildings(); // This will print the building spots debug info
+        console.log('=== END DEBUG ===');
     }
     
     canBuildMoreTurrets() {
-        // No turret limits in legendary mode
-        if (window.selectedDifficulty === 'legendary') {
-            return true;
-        }
+        // Check available turret spots instead of hardcoded limit
+        const layout = window.baseLayoutManager.getBaseLayout('player');
+        if (!layout) return false;
         
-        const playerTurrets = this.engine.entities.filter(entity => 
-            entity.team === 'player' && 
-            entity.type === 'turret'
+        const availableTurretSpots = layout.turretSpots.filter(spot => 
+            spot.isUnlocked && !spot.isOccupied
         );
-        return playerTurrets.length < 5; // Maximum 5 turrets per base
+        
+        return availableTurretSpots.length > 0; // Now 4 corner turret spots max
     }
     
     checkBuildingLimits(buildingType) {
@@ -1674,6 +1733,72 @@ class Game {
             }
         }
         return true;
+    }
+
+    // Message display system
+    showMessage(text, type = 'info') {
+        // Create a temporary message display
+        const messageDiv = document.createElement('div');
+        messageDiv.className = `game-message ${type}`;
+        messageDiv.textContent = text;
+        messageDiv.style.cssText = `
+            position: fixed;
+            top: 100px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: ${type === 'error' ? 'rgba(255, 50, 50, 0.9)' : type === 'success' ? 'rgba(50, 255, 50, 0.9)' : 'rgba(50, 150, 255, 0.9)'};
+            color: white;
+            padding: 10px 20px;
+            border-radius: 5px;
+            font-weight: bold;
+            z-index: 10000;
+            animation: fadeInOut 3s ease-in-out;
+        `;
+        
+        document.body.appendChild(messageDiv);
+        
+        setTimeout(() => {
+            if (document.body.contains(messageDiv)) {
+                document.body.removeChild(messageDiv);
+            }
+        }, 3000);
+    }
+
+    // Base upgrade functionality
+    upgradeBase() {
+        const upgradeCost = this.getBaseUpgradeCost();
+        
+        if (!this.resources.canAfford(upgradeCost.supplies, upgradeCost.power)) {
+            this.showMessage(`Cannot afford base upgrade! Need ${upgradeCost.supplies} supplies, ${upgradeCost.power} power`, 'error');
+            return false;
+        }
+        
+        const result = window.baseLayoutManager.upgradeBase('player');
+        
+        if (result && result.slotsUnlocked > 0) {
+            // Deduct resources
+            this.resources.spendResources(upgradeCost.supplies, upgradeCost.power);
+            
+            this.showMessage(`🔓 Base upgraded! +${result.slotsUnlocked} building slots unlocked (Total: ${result.totalSlots})`, 'success');
+            return true;
+        } else {
+            this.showMessage('Base is already at maximum level!', 'error');
+            return false;
+        }
+    }
+
+    getBaseUpgradeCost() {
+        const layout = window.baseLayoutManager.getBaseLayout('player');
+        if (!layout) return { supplies: 0, power: 0 };
+        
+        // Progressive upgrade costs
+        if (layout.upgradeLevel === 0) {
+            return { supplies: 500, power: 2 }; // First upgrade: 3 -> 5 slots
+        } else if (layout.upgradeLevel === 1) {
+            return { supplies: 1000, power: 4 }; // Second upgrade: 5 -> 7 slots
+        }
+        
+        return { supplies: 0, power: 0 }; // Max level
     }
     
     // Clean up queue timer
@@ -2034,10 +2159,21 @@ class Game {
     }
 }
 
-// Initialize game when page loads
+// Initialize game when page loads (but not for single-player mode)
 let game;
 
 window.addEventListener('load', () => {
+    // Check if we're on the single-player page
+    if (window.location.pathname.includes('single-player.html')) {
+        console.log('Single-player page detected - skipping auto-initialization');
+        // Still add global debug functions but don't create game instance
+        window.addResources = (s, p) => window.game?.addResources(s, p);
+        window.toggleDebug = () => window.game?.toggleDebug();
+        window.spawnEnemyWave = () => window.game?.spawnEnemyWave();
+        window.debugGameState = () => window.game?.debugBuildingState();
+        return;
+    }
+    
     console.log('Initializing Halo Wars JS RTS...');
     
     // Wait a bit for all scripts to load
@@ -2050,11 +2186,14 @@ window.addEventListener('load', () => {
             window.addResources = (s, p) => game.addResources(s, p);
             window.toggleDebug = () => game.toggleDebug();
             window.spawnEnemyWave = () => game.spawnEnemyWave();
+            window.debugGameState = () => game.debugBuildingState();
             
             console.log('Game ready! Try these debug commands:');
             console.log('- addResources(1000, 500) - Add resources');
             console.log('- toggleDebug() - Toggle debug info');
             console.log('- spawnEnemyWave() - Spawn enemy units');
+            console.log('- debugGameState() - Debug building/spot state');
+            console.log('- debugBuildingSpots() - Debug building spots layout');
         } catch (error) {
             console.error('Failed to initialize game:', error);
         }

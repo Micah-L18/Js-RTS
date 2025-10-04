@@ -8,7 +8,7 @@ class Building {
         this.team = team;
         this.isDead = false;
         
-        // Basic properties
+        // Basic properties - 2x2 grid (80x80 pixels)
         this.width = 80;
         this.height = 80;
         this.maxHealth = 500;
@@ -16,6 +16,7 @@ class Building {
         
         // Building state
         this.isActive = true;
+        this.isQueued = false; // Add this missing property
         this.isUnderConstruction = true;
         this.constructionTime = 30000; // 30 seconds
         this.constructionProgress = 0;
@@ -314,27 +315,34 @@ class Building {
     }
     
     getRallyPoint() {
-        // Find available spawn position near building
+        // Find available spawn position just under the base
         const baseX = this.position.x;
-        const baseY = this.position.y + this.height / 2 + 60; // Increased initial distance
+        const baseY = this.position.y + this.height / 2 + 40; // Closer to base for new layout
         
         // Try to find an unoccupied position
         const unitRadius = 15; // Standard unit size
         const maxAttempts = 30; // Increased attempts
-        const spreadDistance = 50; // Increased spread distance
+        const spreadDistance = 40; // Reduced spread for tighter formation
         
         for (let attempt = 0; attempt < maxAttempts; attempt++) {
             let offsetX = 0;
             let offsetY = 0;
             
             if (attempt > 0) {
-                // Improved formation pattern - create concentric circles
-                const ring = Math.floor((attempt - 1) / 8) + 1; // Which ring (circle) we're on
-                const posInRing = (attempt - 1) % 8; // Position within the ring
-                const angle = (posInRing * 45) * (Math.PI / 180); // 45 degrees apart (8 positions per ring)
-                const distance = ring * spreadDistance;
-                offsetX = Math.cos(angle) * distance;
-                offsetY = Math.sin(angle) * distance;
+                // Spawn in a line formation under the base first, then expand
+                if (attempt <= 8) {
+                    // First 8 units spawn in a horizontal line under the base
+                    offsetX = (attempt - 4.5) * 30; // Spread horizontally
+                    offsetY = 0;
+                } else {
+                    // Additional units spawn in concentric circles
+                    const ring = Math.floor((attempt - 9) / 8) + 1;
+                    const posInRing = (attempt - 9) % 8;
+                    const angle = (posInRing * 45) * (Math.PI / 180);
+                    const distance = ring * spreadDistance;
+                    offsetX = Math.cos(angle) * distance;
+                    offsetY = Math.sin(angle) * distance;
+                }
             }
             
             const testPos = new Vector2(
@@ -462,6 +470,12 @@ class Building {
         this.isDead = true;
         this.isActive = false;
         
+        // Release building spot if using building spot system
+        if (this.buildingSpot) {
+            this.buildingSpot.vacate();
+            console.log(`🔓 Released building spot ${this.buildingSpot.spotId} for destroyed ${this.constructor.name}`);
+        }
+        
         if (window.game && window.game.engine) {
             window.game.engine.deselectEntity(this);
         }
@@ -499,8 +513,8 @@ class Base extends Building {
     constructor(x, y, team = 'player') {
         super(x, y, team);
         
-        this.width = 120;
-        this.height = 120;
+        this.width = 160;  // 4x4 grid (160x160 pixels)
+        this.height = 160;
         this.maxHealth = 1000;
         this.health = this.maxHealth;
         this.constructionTime = 30000; // 30 seconds to build
@@ -514,8 +528,8 @@ class Base extends Building {
         
         this.color = team === 'player' ? '#003366' : '#663300';
         
-        // Can produce basic units
-        this.canProduce = ['marine'];
+        // Base only produces warthogs (marines need barracks)
+        this.canProduce = ['warthog'];
     }
     
     render(ctx, camera) {
@@ -536,6 +550,52 @@ class Base extends Building {
             ctx.textAlign = 'center';
             ctx.fillText('HQ', this.position.x, this.position.y + 4);
         }
+    }
+
+    getRallyPoint() {
+        // Base spawns units in the area below it (where troops should muster)
+        const baseX = this.position.x;
+        const baseY = this.position.y + this.height / 2 + 50; // Further below the larger 4x4 base
+        
+        // Try to find an unoccupied position
+        const unitRadius = 15; // Standard unit size
+        const maxAttempts = 30;
+        const spreadDistance = 40;
+        
+        for (let attempt = 0; attempt < maxAttempts; attempt++) {
+            let offsetX = 0;
+            let offsetY = 0;
+            
+            if (attempt > 0) {
+                // Spawn in organized formation below the base
+                if (attempt <= 8) {
+                    // First 8 units spawn in a horizontal line below the base
+                    offsetX = (attempt - 4.5) * 30; // Spread horizontally
+                    offsetY = 0;
+                } else {
+                    // Additional units spawn in concentric circles
+                    const ring = Math.floor((attempt - 9) / 8) + 1;
+                    const posInRing = (attempt - 9) % 8;
+                    const angle = (posInRing * 45) * (Math.PI / 180);
+                    const distance = ring * spreadDistance;
+                    offsetX = Math.cos(angle) * distance;
+                    offsetY = Math.sin(angle) * distance;
+                }
+            }
+            
+            const testPos = new Vector2(
+                baseX + offsetX,
+                baseY + offsetY
+            );
+            
+            // Check if position is clear and within bounds
+            if (this.isPositionClear(testPos, unitRadius) && this.isWithinBounds(testPos)) {
+                return testPos;
+            }
+        }
+        
+        // Fallback to base position if no clear spot found
+        return new Vector2(baseX, baseY);
     }
 }
 
@@ -600,6 +660,28 @@ class Barracks extends Building {
             ctx.fillText('BARRACKS', this.position.x, this.position.y + 3);
         }
     }
+
+    getRallyPoint() {
+        // All buildings should use the main base rally point for consistent unit spawning
+        if (window.game && window.game.engine) {
+            // Find the player's main base
+            const playerBase = window.game.engine.entities.find(entity => 
+                entity.constructor.name === 'Base' && 
+                entity.team === this.team &&
+                !entity.isDead
+            );
+            
+            if (playerBase) {
+                // Use the main base's rally point system
+                return playerBase.getRallyPoint();
+            }
+        }
+        
+        // Fallback: spawn near the barracks if no base found
+        const baseX = this.position.x;
+        const baseY = this.position.y + this.height / 2 + 30;
+        return new Vector2(baseX, baseY);
+    }
 }
 
 class Reactor extends Building {
@@ -615,9 +697,9 @@ class Reactor extends Building {
         // Reactor provides 1 power when completed
         this.powerGeneration = 1;
         
-        // Cost calculated dynamically based on existing reactors
-        const reactorCount = window.game?.resources?.reactorCount || 0;
-        this.supplyCost = 250 + (reactorCount * 250);
+        // Cost calculated dynamically based on existing reactors (including under construction)
+        const cost = window.game?.resources?.getReactorCost() || 250;
+        this.supplyCost = cost;
         this.powerCost = 0; // Only costs supplies
         
         this.color = team === 'player' ? '#0066cc' : '#cc6600';
@@ -674,12 +756,31 @@ const BuildingFactory = {
         }
     },
     
+    getCost: (type) => {
+        // Special handling for reactor cost
+        if (type.toLowerCase() === 'reactor') {
+            const cost = window.game?.resources?.getReactorCost() || 250;
+            return {
+                supplies: cost,
+                power: 0,
+                buildTime: 30000 // 30 seconds to build
+            };
+        }
+        
+        const tempBuilding = BuildingFactory.create(type, 0, 0);
+        return {
+            supplies: tempBuilding.supplyCost,
+            power: tempBuilding.powerCost,
+            buildTime: tempBuilding.constructionTime
+        };
+    },
+    
     getBuildingCost: (type) => {
         // Special handling for reactor cost
         if (type.toLowerCase() === 'reactor') {
-            const reactorCount = window.game?.resources?.reactorCount || 0;
+            const cost = window.game?.resources?.getReactorCost() || 250;
             return {
-                supplies: 250 + (reactorCount * 250),
+                supplies: cost,
                 power: 0,
                 buildTime: 30000 // 30 seconds to build
             };
@@ -699,8 +800,8 @@ class Turret extends Building {
     constructor(x, y, team = 'player') {
         super(x, y, team);
         
-        this.width = 60;
-        this.height = 60;
+        this.width = 40;  // 1x1 grid (40x40 pixels)
+        this.height = 40;
         this.maxHealth = 800; // Doubled from 400 - much more durable
         this.health = this.maxHealth;
         this.constructionTime = 15000; // 15 seconds to build
@@ -816,11 +917,19 @@ class Turret extends Building {
         const isMultiplayer = window.game && window.game.isMultiplayer === true;
         const isMyBuilding = !isMultiplayer || this.team === window.game.playerTeam;
         
-        // Debug logging for turret authority check
-        console.log(`TURRET AUTHORITY: ${this.constructor.name} ${this.id} (team: ${this.team}) attacking ${target.constructor.name} ${target.id} (team: ${target.team})`);
-        console.log(`  isMultiplayer: ${isMultiplayer}, playerTeam: ${window.game ? window.game.playerTeam : 'N/A'}`);
-        console.log(`  this.team === playerTeam: ${this.team === (window.game ? window.game.playerTeam : 'N/A')}`);
-        console.log(`  isMyBuilding: ${isMyBuilding}, but turrets always have authority in multiplayer`);
+        // Debug logging for turret authority check - only log to spLogger to reduce spam
+        if (window.spLogger) {
+            window.spLogger.log('TURRET_AUTHORITY', `Turret authority check`, {
+                turret: this.constructor.name,
+                turretId: this.id,
+                turretTeam: this.team,
+                target: target.constructor.name,
+                targetId: target.id,
+                targetTeam: target.team,
+                isMultiplayer: isMultiplayer,
+                isMyBuilding: isMyBuilding
+            });
+        }
         
         // Create visual effects
         this.createAttackEffects(target);
@@ -833,7 +942,17 @@ class Turret extends Building {
         // Turrets always apply damage in multiplayer (unlike units which need ownership authority)
         // This ensures turrets can actually kill enemy troops as intended
         target.takeDamage(finalDamage, false, this); // Pass the turret as attacker
-        console.log(`${this.constructor.name} attacked ${target.constructor.name} for ${finalDamage} damage (${Math.round(falloffFactor * 100)}% of ${this.damage} base damage)`);
+        // Log attack damage to spLogger only to reduce console spam
+        if (window.spLogger) {
+            window.spLogger.log('TURRET_ATTACK', `Turret attacked target`, {
+                turret: this.constructor.name,
+                target: target.constructor.name,
+                damage: finalDamage,
+                damagePercent: Math.round(falloffFactor * 100),
+                baseDamage: this.damage,
+                distance: Math.round(distance)
+            });
+        }
         
         // Send damage event to other players
         if (isMultiplayer) {

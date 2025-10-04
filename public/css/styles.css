@@ -1703,3 +1703,109 @@ body {
     0%, 100% { opacity: 0.9; }
     50% { opacity: 0.7; }
 }
+
+/* Building Spot System Message Animations */
+@keyframes fadeInOut {
+    0% { opacity: 0; transform: translateX(-50%) translateY(-20px); }
+    20% { opacity: 1; transform: translateX(-50%) translateY(0); }
+    80% { opacity: 1; transform: translateX(-50%) translateY(0); }
+    100% { opacity: 0; transform: translateX(-50%) translateY(-20px); }
+}
+
+.game-message {
+    font-family: 'Arial', sans-serif;
+    font-size: 14px;
+    text-align: center;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+}
+
+/* Upgrade Base Button Styles */
+.upgrade-btn {
+    background: linear-gradient(135deg, #4a90e2, #357abd) !important;
+    border-color: rgba(255, 255, 255, 0.4) !important;
+}
+
+.upgrade-btn:hover {
+    background: linear-gradient(135deg, #5ba0f2, #4585c8) !important;
+    transform: scale(1.05);
+    box-shadow: 0 0 15px rgba(74, 144, 226, 0.5);
+}
+
+.upgrade-btn:disabled {
+    background: linear-gradient(135deg, #666, #555) !important;
+    cursor: not-allowed;
+    opacity: 0.5;
+}
+
+/* Building Spot Menu Styles */
+.building-spot-menu {
+    backdrop-filter: blur(10px);
+    box-shadow: 0 4px 20px rgba(0, 212, 255, 0.3);
+}
+
+.building-spot-menu .menu-title {
+    text-align: center;
+    font-weight: bold;
+    margin-bottom: 10px;
+    color: #00d4ff;
+    font-size: 14px;
+}
+
+.building-spot-menu .building-options {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    margin-bottom: 10px;
+}
+
+.building-spot-menu .building-option {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px;
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    color: white;
+    font-size: 12px;
+}
+
+.building-spot-menu .building-option:hover {
+    background: rgba(0, 212, 255, 0.2);
+    border-color: rgba(0, 212, 255, 0.5);
+    transform: translateY(-1px);
+}
+
+.building-spot-menu .building-icon {
+    font-size: 16px;
+    min-width: 20px;
+    text-align: center;
+}
+
+.building-spot-menu .building-name {
+    flex: 1;
+    font-weight: bold;
+}
+
+.building-spot-menu .building-cost {
+    font-size: 10px;
+    color: #ffaa00;
+}
+
+.building-spot-menu .cancel-build {
+    width: 100%;
+    padding: 6px;
+    background: rgba(255, 100, 100, 0.2);
+    border: 1px solid rgba(255, 100, 100, 0.4);
+    border-radius: 4px;
+    color: white;
+    cursor: pointer;
+    font-size: 12px;
+}
+
+.building-spot-menu .cancel-build:hover {
+    background: rgba(255, 100, 100, 0.3);
+    border-color: rgba(255, 100, 100, 0.6);
+}

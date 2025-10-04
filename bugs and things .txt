@@ -2,7 +2,11 @@ ive also found another thing that when a user clicks away from tha game it stops
 
 troop population needs to update immediatly 
 
-troop balancing 
+troop balancing
+    i want the tank to cost 500 supplies and to be 5x as strong defensivly , 5x as strong attacking but attack at 1/3 of the speed and move at 1/3 of the speed, and take 3 times as long to build
+    i want the worthog to cost 150 to be 3 times as fast 3 times as strong attcking wise but only 2 times as strong defensivly and take 2 times as long to build
+    i want the turrents to shoot more rapidly but do far less damage per shot 
 
-i want the tank to cost 500 supplies and to be 5x as strong defensivly , 5x as strong attacking but attack at 1/3 of the speed and move at 1/3 of the speed
-i want the worthog to cost 150 to be 3 times as fast 3 times as strong attcking wise but only 2 times as strong defensivly/
+
+
+buildings cost supplies to opperate, example 1 supply per second and then the 

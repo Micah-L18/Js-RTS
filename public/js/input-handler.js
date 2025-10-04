@@ -268,7 +268,17 @@ class InputHandler {
             return; // Let the building placement handler deal with the click
         }
         
-        // Check if we clicked on an entity first
+        // Check if we clicked on a building spot first
+        if (window.baseLayoutManager) {
+            const clickedSpot = window.baseLayoutManager.findClickedBuildingSpot('player', this.worldMousePos.x, this.worldMousePos.y);
+            if (clickedSpot) {
+                this.clickedOnEntity = true; // Prevent drag selection
+                this.showBuildingSpotMenu(clickedSpot);
+                return;
+            }
+        }
+        
+        // Check if we clicked on an entity
         const clickedEntity = this.getEntityAtPosition(this.worldMousePos);
         
         if (clickedEntity) {
@@ -922,5 +932,134 @@ class InputHandler {
         } else if (window.multiplayer) {
             window.multiplayer.leaveRoom();
         }
+    }
+
+    getReactorCostDisplay() {
+        if (window.game && window.game.resources && window.game.resources.getReactorCost) {
+            const cost = window.game.resources.getReactorCost();
+            return `${cost}💰`;
+        }
+        return '250💰'; // fallback
+    }
+
+    showBuildingSpotMenu(buildingSpot) {
+        // Remove any existing building spot menu
+        this.hideBuildingSpotMenu();
+        
+        // Create building selection menu
+        const menu = document.createElement('div');
+        menu.id = 'buildingSpotMenu';
+        menu.className = 'building-spot-menu';
+        
+        // Determine available buildings for this spot
+        const availableBuildings = buildingSpot.type === 'turret' 
+            ? [{ type: 'turret', name: 'Turret', cost: '250💰 1⚡', icon: '🎯' }]
+            : [
+                { type: 'supply', name: 'Supply Depot', cost: '150💰', icon: '📦' },
+                { type: 'barracks', name: 'Barracks', cost: '300💰', icon: '🏠' },
+                { type: 'reactor', name: 'Reactor', cost: this.getReactorCostDisplay(), icon: '⚡' }
+            ];
+        
+        menu.innerHTML = `
+            <div class="menu-title">Build on ${buildingSpot.spotId}</div>
+            <div class="building-options">
+                ${availableBuildings.map(building => `
+                    <button class="building-option" data-type="${building.type}">
+                        <div class="building-icon">${building.icon}</div>
+                        <div class="building-name">${building.name}</div>
+                        <div class="building-cost">${building.cost}</div>
+                    </button>
+                `).join('')}
+            </div>
+            <button class="cancel-build">Cancel</button>
+        `;
+        
+        // Position menu at cursor
+        const rect = this.engine.canvas.getBoundingClientRect();
+        menu.style.cssText = `
+            position: fixed;
+            left: ${this.mousePos.x + rect.left + 10}px;
+            top: ${this.mousePos.y + rect.top - 10}px;
+            background: linear-gradient(135deg, rgba(22, 33, 62, 0.95), rgba(15, 52, 96, 0.95));
+            border: 2px solid rgba(0, 212, 255, 0.8);
+            border-radius: 8px;
+            padding: 10px;
+            z-index: 10000;
+            font-family: Arial, sans-serif;
+            color: white;
+            min-width: 180px;
+        `;
+        
+        document.body.appendChild(menu);
+        
+        // Add event listeners
+        menu.addEventListener('click', (e) => {
+            e.stopPropagation();
+            
+            if (e.target.classList.contains('cancel-build') || e.target.closest('.cancel-build')) {
+                this.hideBuildingSpotMenu();
+                return;
+            }
+            
+            const buildingOption = e.target.closest('.building-option');
+            if (buildingOption) {
+                const buildingType = buildingOption.dataset.type;
+                this.buildingInSpot(buildingSpot, buildingType);
+                this.hideBuildingSpotMenu();
+            }
+        });
+        
+        // Close menu when clicking outside
+        const closeHandler = (e) => {
+            if (!menu.contains(e.target)) {
+                this.hideBuildingSpotMenu();
+                document.removeEventListener('click', closeHandler);
+            }
+        };
+        
+        setTimeout(() => {
+            document.addEventListener('click', closeHandler);
+        }, 100);
+    }
+
+    hideBuildingSpotMenu() {
+        const menu = document.getElementById('buildingSpotMenu');
+        if (menu) {
+            menu.remove();
+        }
+    }
+
+    buildingInSpot(buildingSpot, buildingType) {
+        if (!this.game) return;
+        
+        // Get building cost
+        const cost = BuildingFactory.getCost(buildingType);
+        
+        // Check if we can afford it
+        if (!this.game.resources.canAfford(cost.supplies, cost.power)) {
+            this.game.showMessage(`Insufficient resources! Need ${cost.supplies} supplies, ${cost.power} power`, 'error');
+            return;
+        }
+        
+        // Create building data for the spot
+        const buildingData = {
+            type: buildingType,
+            position: buildingSpot.position,
+            cost: cost,
+            team: 'player',
+            spot: buildingSpot
+        };
+        
+        // Don't occupy the spot yet - let the game queue handle it properly
+        this.game.resources.spendResources(cost.supplies, cost.power);
+        const success = this.game.addBuildingToQueue(buildingData);
+        
+        if (!success) {
+            // If queuing failed, refund the resources
+            this.game.resources.addResources(cost.supplies, cost.power);
+            return;
+        }
+        
+        console.log(`${buildingType} queued for construction at spot ${buildingSpot.spotId}`);
     }
 }

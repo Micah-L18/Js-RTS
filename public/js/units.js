@@ -226,6 +226,37 @@ class Unit {
             }
         }
         
+        // Unit-to-unit collision detection and avoidance
+        const nearbyUnits = window.game.engine.getEntitiesNear(newPosition, this.radius + 25)
+            .filter(entity => entity instanceof Unit && entity !== this && !entity.isDead);
+        
+        // Apply unit separation force
+        if (nearbyUnits.length > 0) {
+            let separationForce = new Vector2(0, 0);
+            
+            for (const otherUnit of nearbyUnits) {
+                const toOtherUnit = otherUnit.position.subtract(this.position);
+                const distance = toOtherUnit.length();
+                const minDistance = this.radius + otherUnit.radius + 5; // Small buffer between units
+                
+                if (distance < minDistance && distance > 0) {
+                    // Calculate separation force (push away from other unit)
+                    const pushAway = toOtherUnit.normalize().multiply(-1);
+                    const strength = (minDistance - distance) / minDistance; // Stronger when closer
+                    separationForce = separationForce.add(pushAway.multiply(strength));
+                }
+            }
+            
+            // Apply separation force if needed
+            if (separationForce.length() > 0) {
+                const separationVelocity = separationForce.normalize().multiply(this.maxSpeed * 0.3);
+                finalPosition = finalPosition.add(separationVelocity.multiply(deltaTime / 1000));
+                
+                // Slightly reduce forward velocity when avoiding other units
+                this.velocity = this.velocity.multiply(0.9);
+            }
+        }
+        
         // Clamp position to world bounds
         this.position = new Vector2(
             MathUtils.clamp(finalPosition.x, this.radius, window.game.engine.worldWidth - this.radius),
@@ -376,6 +407,70 @@ class Unit {
             if (this.velocity.length() > 0.1) {
                 this.rotation = Math.atan2(this.velocity.y, this.velocity.x);
             }
+            
+            // Actually update the position with collision detection (same as regular movement)
+            const newPosition = this.position.add(this.velocity.multiply(deltaTime / 1000));
+            
+            // Building collision detection and avoidance
+            const nearbyBuildings = window.game.engine.getEntitiesNear(newPosition, this.radius + 35)
+                .filter(entity => entity instanceof Building && entity !== this);
+            
+            let finalPosition = newPosition;
+            
+            if (nearbyBuildings.length > 0) {
+                const building = nearbyBuildings[0];
+                const toBuildingVector = building.position.subtract(this.position);
+                const distance = toBuildingVector.length();
+                
+                const buildingRadius = Math.max(building.width, building.height) / 2;
+                const collisionBuffer = 25;
+                if (distance < this.radius + buildingRadius + collisionBuffer) {
+                    const pushAwayForce = toBuildingVector.normalize().multiply(-this.maxSpeed * 0.8);
+                    const avoidancePosition = this.position.add(pushAwayForce.multiply(deltaTime / 1000));
+                    finalPosition = avoidancePosition;
+                    this.velocity = this.velocity.multiply(0.5);
+                    
+                    if (distance < this.radius + buildingRadius + 10) {
+                        this.attackMoveDestination = null;
+                        this.isAttackMoving = false;
+                        this.state = 'idle';
+                    }
+                } else {
+                    finalPosition = newPosition;
+                }
+            }
+            
+            // Unit-to-unit collision detection and avoidance
+            const nearbyUnits = window.game.engine.getEntitiesNear(newPosition, this.radius + 25)
+                .filter(entity => entity instanceof Unit && entity !== this && !entity.isDead);
+            
+            if (nearbyUnits.length > 0) {
+                let separationForce = new Vector2(0, 0);
+                
+                for (const otherUnit of nearbyUnits) {
+                    const toOtherUnit = otherUnit.position.subtract(this.position);
+                    const distance = toOtherUnit.length();
+                    const minDistance = this.radius + otherUnit.radius + 5;
+                    
+                    if (distance < minDistance && distance > 0) {
+                        const pushAway = toOtherUnit.normalize().multiply(-1);
+                        const strength = (minDistance - distance) / minDistance;
+                        separationForce = separationForce.add(pushAway.multiply(strength));
+                    }
+                }
+                
+                if (separationForce.length() > 0) {
+                    const separationVelocity = separationForce.normalize().multiply(this.maxSpeed * 0.3);
+                    finalPosition = finalPosition.add(separationVelocity.multiply(deltaTime / 1000));
+                    this.velocity = this.velocity.multiply(0.9);
+                }
+            }
+            
+            // Clamp position to world bounds
+            this.position = new Vector2(
+                MathUtils.clamp(finalPosition.x, this.radius, window.game.engine.worldWidth - this.radius),
+                MathUtils.clamp(finalPosition.y, this.radius, window.game.engine.worldHeight - this.radius)
+            );
         }
     }
     
@@ -611,7 +706,15 @@ class Unit {
         if (attacker && !this.isDead && this.state === 'idle' && this.canAttack()) {
             // Only auto-defend if the attacker is an enemy unit (not building)
             if (attacker instanceof Unit && attacker.team !== this.team) {
-                console.log(`${this.constructor.name} auto-defending against ${attacker.constructor.name}!`);
+                // Auto-defend against attacker - log to spLogger only
+                if (window.spLogger) {
+                    window.spLogger.log('UNIT_AUTO_DEFEND', `Unit auto-defending`, {
+                        defender: this.constructor.name,
+                        attacker: attacker.constructor.name,
+                        defenderId: this.id,
+                        attackerId: attacker.id
+                    });
+                }
                 this.attackUnit(attacker);
             }
         }

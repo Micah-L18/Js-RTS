@@ -12,6 +12,10 @@
         // Make it accessible globally for AI code
         window.selectedDifficulty = selectedDifficulty;
         
+        // Game initialization guard
+        let gameInitialized = false;
+        let missionBriefingStarted = false;
+        
         // Define selectDifficulty function globally for onclick attributes
         function selectDifficulty(difficulty) {
             console.log('selectDifficulty called with:', difficulty);
@@ -40,6 +44,15 @@
         // Define startMissionBriefing function globally
         function startMissionBriefing() {
             console.log('Starting mission briefing...');
+            
+            // Prevent multiple briefing countdowns
+            if (missionBriefingStarted) {
+                console.warn('Mission briefing already started, ignoring duplicate request');
+                return;
+            }
+            
+            missionBriefingStarted = true;
+            
             document.getElementById('campaignMenu').style.display = 'none';
             document.getElementById('missionBriefing').style.display = 'block';
             
@@ -60,6 +73,14 @@
         // Define startSinglePlayerGame function globally
         function startSinglePlayerGame() {
             console.log('Starting single-player game...');
+            
+            // Prevent multiple initialization
+            if (gameInitialized) {
+                console.warn('Game already initialized, ignoring duplicate start request');
+                return;
+            }
+            
+            gameInitialized = true;
             
             // Hide lobby interface and show game
             document.getElementById('singlePlayerLobby').style.display = 'none';
@@ -233,73 +254,6 @@
                 </div>
             </div>
 
-            <!-- Command Panel -->
-            <div id="commandPanel" class="overlay-panel command-panel" style="display: none;">
-                <div class="command-tabs">
-                    <button class="tab-btn active" data-tab="units">Units</button>
-                    <button class="tab-btn" data-tab="buildings">Buildings</button>
-                    <button class="tab-btn" data-tab="actions">Actions</button>
-                </div>
-                
-                <div id="unitsTab" class="command-section active">
-                    <div class="command-grid">
-                        <button class="command-btn unit-btn" data-unit="marine">
-                            <div class="btn-icon">🪖</div>
-                            <div class="btn-label">Marine</div>
-                            <div class="btn-cost">50💰 1👥</div>
-                        </button>
-                        <button class="command-btn unit-btn" data-unit="warthog">
-                            <div class="btn-icon">🚗</div>
-                            <div class="btn-label">Warthog</div>
-                            <div class="btn-cost">150💰 1⚡ 3👥</div>
-                        </button>
-                        <button class="command-btn unit-btn" data-unit="scorpion">
-                            <div class="btn-icon">🦂</div>
-                            <div class="btn-label">Scorpion</div>
-                            <div class="btn-cost">500💰 2⚡ 5👥</div>
-                        </button>
-                    </div>
-                </div>
-
-                <div id="buildingsTab" class="command-section">
-                    <div class="command-grid">
-                        <button class="command-btn building-btn" data-building="supply">
-                            <div class="btn-icon">📦</div>
-                            <div class="btn-label">Supply Depot</div>
-                            <div class="btn-cost">150💰</div>
-                        </button>
-                        <button class="command-btn building-btn" data-building="barracks">
-                            <div class="btn-icon">🏠</div>
-                            <div class="btn-label">Barracks</div>
-                            <div class="btn-cost">300💰</div>
-                        </button>
-                        <button class="command-btn building-btn" data-building="turret">
-                            <div class="btn-icon">🎯</div>
-                            <div class="btn-label">Turret</div>
-                            <div class="btn-cost">250💰 1⚡</div>
-                        </button>
-                        <button class="command-btn building-btn" data-building="reactor">
-                            <div class="btn-icon">⚡</div>
-                            <div class="btn-label">Reactor</div>
-                            <div class="btn-cost">250+💰</div>
-                        </button>
-                    </div>
-                </div>
-
-                <div id="actionsTab" class="command-section">
-                    <div class="command-grid">
-                        <button class="command-btn action-btn" id="stopBtn">
-                            <div class="btn-icon">⏹️</div>
-                            <div class="btn-label">Stop</div>
-                        </button>
-                        <button class="command-btn action-btn" id="holdBtn">
-                            <div class="btn-icon">🛡️</div>
-                            <div class="btn-label">Hold Position</div>
-                        </button>
-                    </div>
-                </div>
-            </div>
-
             <!-- Selected Entity Panel -->
             <div id="selectedEntityPanel" class="overlay-panel selected-entity-panel">
                 <div id="selectedUnitsDisplay" style="display: none;"></div>
@@ -348,6 +302,7 @@
     <script src="js/game-engine.js"></script>
     <script src="js/units.js"></script>
     <script src="js/buildings.js"></script>
+    <script src="js/building-spots.js"></script>
     <script src="js/renderer.js"></script>
     <script src="js/input-handler.js"></script>
     <script src="js/ai-opponent.js"></script>
@@ -387,12 +342,6 @@
                     selectDifficulty('easy');
                 });
                 console.log('Easy button event listener added');
-                
-                // Test click programmatically
-                setTimeout(() => {
-                    console.log('Testing programmatic click on easy button');
-                    easyBtn.click();
-                }, 1000);
             }
             
             if (normalBtn) {
@@ -461,6 +410,12 @@
             console.log('=== STARTING SINGLE-PLAYER GAME ===');
             console.log('Selected difficulty:', selectedDifficulty);
             console.log('Window.selectedDifficulty:', window.selectedDifficulty);
+            
+            // Prevent duplicate initialization
+            if (window.game && window.game.isInitialized) {
+                console.warn('Single-player game already initialized, skipping duplicate initialization');
+                return;
+            }
             
             // Hide lobby, show game UI
             document.getElementById('singlePlayerLobby').style.display = 'none';
@@ -619,14 +574,19 @@
                     if (window.game && window.game.engine) {
                         if (selectedDifficulty === 'legendary') {
                             updateEnemyBaseCounter();
+                        } else {
+                            // For non-legendary difficulties, check victory/defeat separately
+                            checkPlayerDefeat();
+                            checkVictoryCondition();
                         }
-                        checkPlayerDefeat(); // Check for defeat in all modes
                     }
                 }, 1000); // Update every second
             }, 2000);
             
             // Start the game
             window.game.start();
+            
+            // Upgrade base functionality moved to HQ modal
             
             console.log('=== SINGLE-PLAYER GAME SETUP COMPLETE ===');
             
@@ -680,28 +640,22 @@
             
             console.log(`Setting up player base for ${selectedDifficulty} mode at (${playerBaseX}, ${playerBaseY})`);
             
+            // Create player base layout first
+            const playerLayout = window.baseLayoutManager.createBaseLayout(playerBaseX, playerBaseY, 'player');
+            console.log(`✓ Player base layout created with ${playerLayout.getAvailableBuildingSlots()} building slots and ${playerLayout.getAvailableTurretSlots()} turret slots`);
+            
             // Create player base
             const playerBase = BuildingFactory.create('base', playerBaseX, playerBaseY, 'player');
             playerBase.id = 'player_base_main';
             playerBase.isUnderConstruction = false;
             window.game.engine.addEntity(playerBase);
             
-            // Create initial supply depot
-            const supplyDepot = BuildingFactory.create('supply', playerBaseX + 100, playerBaseY + 150, 'player');
-            supplyDepot.id = 'player_supply_initial';
-            supplyDepot.isUnderConstruction = false;
-            window.game.engine.addEntity(supplyDepot);
+            // Create initial warthog using base rally point
+            const spawnPos = playerBase.getRallyPoint();
             
-            // Create initial marines
-            for (let i = 0; i < 3; i++) {
-                const angle = (i / 3) * Math.PI * 2;
-                const spawnX = playerBaseX + Math.cos(angle) * 80;
-                const spawnY = playerBaseY + Math.sin(angle) * 80;
-                
-                const marine = UnitFactory.create('marine', spawnX, spawnY, 'player');
-                marine.id = `player_marine_initial_${i}`;
-                window.game.engine.addEntity(marine);
-            }
+            const warthog = UnitFactory.create('warthog', spawnPos.x, spawnPos.y, 'player');
+            warthog.id = 'player_warthog_initial';
+            window.game.engine.addEntity(warthog);
             
             // Position camera to show player base
             window.game.engine.setCameraPosition(playerBaseX - 300, playerBaseY - 300);
@@ -860,6 +814,42 @@
                     }
                     const message = `💀 DEFEAT! Your headquarters has been destroyed in ${difficultyText}!`;
                     window.game.showGameOverModal(false, message);
+                }, 100);
+            }
+        }
+        
+        function checkVictoryCondition() {
+            if (gameEnded || !window.game || !window.game.engine) return;
+            
+            // Check for victory condition (destroy all enemy bases)
+            const aliveEnemyBases = window.game.engine.entities.filter(entity => 
+                entity.constructor.name === 'Base' && 
+                entity.team === 'enemy' &&
+                !entity.isDead &&
+                entity.health > 0
+            );
+            
+            // Debug: List all enemy bases with details
+            if (aliveEnemyBases.length > 1) {
+                console.log('DEBUG: Multiple enemy bases detected:');
+                aliveEnemyBases.forEach((base, idx) => {
+                    console.log(`  Base ${idx}: ID=${base.id}, pos=(${base.position?.x},${base.position?.y}), health=${base.health}/${base.maxHealth}`);
+                });
+            }
+            
+            console.log(`Victory check: ${aliveEnemyBases.length} enemy bases remaining`);
+            
+            if (aliveEnemyBases.length === 0) {
+                gameEnded = true;
+                setTimeout(() => {
+                    let difficultyText;
+                    if (selectedDifficulty === 'legendary') {
+                        difficultyText = 'LEGENDARY MODE';
+                    } else {
+                        difficultyText = selectedDifficulty.toUpperCase();
+                    }
+                    const message = `🏆 VICTORY! You destroyed all enemy bases in ${difficultyText}!`;
+                    window.game.showGameOverModal(true, message);
                 }, 100);
             }
         }
@@ -1026,5 +1016,73 @@
         </div>
     </div>
 
+    <!-- HQ Modal for Base Commands -->
+    <div id="hqModal" class="building-modal" style="display:none;">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h3>Base Commands</h3>
+          <button class="modal-close" onclick="window.game.closeAllModals()">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="modal-section">
+            <button class="modal-btn" id="spawnWarthogBtn">
+              <span class="btn-icon">🚗</span> 
+              <span class="btn-label">Spawn Warthog</span>
+              <div class="btn-cost">150💰 1⚡ 3👥</div>
+            </button>
+            <button class="modal-btn" id="upgradeBaseModalBtn">
+              <span class="btn-icon">🔓</span> 
+              <span class="btn-label">Upgrade Base</span>
+              <div class="btn-cost">500💰 2⚡</div>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <script>
+      // Simple handlers like in hqModal.html
+      function setupHQModalHandlers() {
+        console.log('Setting up HQ modal handlers...');
+        
+        const spawnWarthogBtn = document.getElementById('spawnWarthogBtn');
+        if (spawnWarthogBtn) {
+          console.log('✓ Spawn Warthog button found');
+          spawnWarthogBtn.onclick = function() {
+            console.log('Spawn Warthog clicked');
+            if (window.game && window.game.handleUnitProduction) {
+              // Find and select player base
+              const playerBase = window.game.engine.entities.find(entity => 
+                entity.constructor.name === 'Base' && 
+                entity.team === window.game.playerTeam && 
+                !entity.isDead
+              );
+              if (playerBase) {
+                window.game.engine.clearSelection();
+                window.game.engine.selectEntity(playerBase);
+                window.game.handleUnitProduction('warthog');
+              }
+            }
+            window.game.closeAllModals();
+          };
+        }
+        
+        const upgradeBaseModalBtn = document.getElementById('upgradeBaseModalBtn');
+        if (upgradeBaseModalBtn) {
+          console.log('✓ Upgrade Base button found');
+          upgradeBaseModalBtn.onclick = function() {
+            console.log('Upgrade Base clicked');
+            if (window.game && window.game.upgradeBase) {
+              window.game.upgradeBase();
+            }
+            window.game.closeAllModals();
+          };
+        }
+      }
+      
+      // Setup handlers
+      setupHQModalHandlers();
+      document.addEventListener('DOMContentLoaded', setupHQModalHandlers);
+    </script>
+    <!-- End HQ Modal -->
 </body>
 </html>

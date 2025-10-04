@@ -55,6 +55,9 @@ class AIOpponent {
             isDefending: false,
             lastDefenseTime: 0
         };
+        
+        // Base initialization tracking
+        this.baseInitialized = false;
     }
     
     // Initialize AI with just the main base, then build sequentially
@@ -64,8 +67,29 @@ class AIOpponent {
             return;
         }
         
+        // Prevent duplicate initialization
+        if (this.baseInitialized) {
+            console.warn(`AI ${this.aiId} base already initialized, skipping`);
+            return;
+        }
+        
+        console.log(`Initializing base for AI ${this.aiId}`);
+        
         // Calculate position based on AI index to avoid overlapping
         const { baseX, baseY } = this.calculateBasePosition();
+        
+        // Create AI base layout with building spots - start with basic 3 slots
+        const aiLayout = window.baseLayoutManager.createBaseLayout(baseX, baseY, this.team);
+        if (window.spLogger) {
+            window.spLogger.log('AI_BASE', `AI base layout created`, {
+                aiId: this.aiId,
+                buildingSlots: aiLayout.getAvailableBuildingSlots(),
+                turretSlots: aiLayout.getAvailableTurretSlots()
+            });
+        }
+        
+        // AI starts with basic 3 building slots like player
+        // Will upgrade later through normal gameplay
         
         // Create main base (HQ) only
         const mainBase = BuildingFactory.create('base', baseX, baseY, this.team);
@@ -73,13 +97,94 @@ class AIOpponent {
         mainBase.isUnderConstruction = false; // Start completed
         window.game.engine.addEntity(mainBase);
         
-        // Initialize building queue system for AI
-        this.initializeBuildingQueue(baseX, baseY);
+        // Store base position for building spot system
+        this.basePosition = { x: baseX, y: baseY };
+        
+        // Build initial structures using building spots
+        this.buildInitialStructures();
         
         // Create initial army
         this.spawnInitialUnits(baseX, baseY);
         
-        console.log(`AI base ${this.aiIndex} initialized at (${baseX}, ${baseY}) - will build sequentially`);
+        if (window.spLogger) {
+            window.spLogger.log('AI_BASE_INIT', `AI base initialized`, {
+                aiIndex: this.aiIndex,
+                position: { x: baseX, y: baseY },
+                team: this.team
+            });
+        }
+        
+        // Mark as initialized to prevent duplicates
+        this.baseInitialized = true;
+        console.log(`✓ AI ${this.aiId} base initialization completed`);
+    }
+    
+    // Build structures using the building spot system
+    buildInitialStructures() {
+        const buildOrder = [
+            'supply', 'reactor', 'barracks', 'turret',  // First round
+            'supply', 'reactor', 'barracks', 'turret'   // Second round (limited to 2 each)
+        ];
+        
+        // Build structures with delays to simulate construction time
+        buildOrder.forEach((buildingType, index) => {
+            setTimeout(() => {
+                this.buildBuildingInSpot(buildingType);
+            }, index * 2000); // 2 second delay between buildings
+        });
+    }
+    
+    buildBuildingInSpot(buildingType) {
+        // Find an available building spot
+        const buildingSpot = window.baseLayoutManager.findBuildingSpot(this.team, this.basePosition.x, this.basePosition.y, buildingType);
+        
+        if (!buildingSpot) {
+            if (window.spLogger) {
+                window.spLogger.log('AI_BUILD', `No available ${buildingType} spots`, {
+                    aiId: this.aiId,
+                    buildingType: buildingType
+                });
+            }
+            return;
+        }
+        
+        // Check building limits (still enforce 2 per type)
+        const existingBuildings = window.game.engine.entities.filter(entity => 
+            entity.team === this.team && 
+            entity.type === buildingType &&
+            !entity.isDead
+        );
+        
+        if (existingBuildings.length >= 2) {
+            if (window.spLogger) {
+                window.spLogger.log('AI_BUILD', `Building limit reached`, {
+                    aiId: this.aiId,
+                    buildingType: buildingType,
+                    existingCount: existingBuildings.length
+                });
+            }
+            return;
+        }
+        
+        // Reserve the spot and create the building with proper construction
+        const building = BuildingFactory.create(buildingType, buildingSpot.position.x, buildingSpot.position.y, this.team);
+        building.id = `ai_${buildingType}_${this.aiId}_${Date.now()}`;
+        building.buildingSpot = buildingSpot;
+        building.isUnderConstruction = true; // AI buildings must be constructed like player buildings
+        building.constructionStartTime = Date.now(); // Start construction timer
+        window.game.engine.addEntity(building);
+        
+        // Update spot reference with the building
+        buildingSpot.occupy(building);
+        
+        if (window.spLogger) {
+            window.spLogger.log('AI_BUILD', `Built ${buildingType}`, {
+                aiId: this.aiId,
+                buildingType: buildingType,
+                spotId: buildingSpot.spotId,
+                position: { x: buildingSpot.position.x, y: buildingSpot.position.y }
+            });
+        }
     }
     
     // Initialize the AI building queue system
@@ -145,7 +250,14 @@ class AIOpponent {
         // Only build up to 2 of each type (including queued buildings)
         const maxCount = 2;
         if (totalCount >= maxCount) {
-            console.log(`🤖 AI QUEUE BLOCKED: Already have/queued ${totalCount} ${buildingType} buildings (existing: ${existingBuildings.length}, queued: ${queuedBuildings.length}) - STRICT 2-BUILDING CAP`);
+            if (window.spLogger) {
+                window.spLogger.log('AI_QUEUE_BLOCKED', `AI queue blocked: Already have/queued ${totalCount} ${buildingType} buildings`, {
+                    aiIndex: this.aiIndex,
+                    buildingType: buildingType,
+                    existingCount: existingBuildings.length,
+                    queuedCount: queuedBuildings.length
+                });
+            }
             return;
         }
         
@@ -158,7 +270,14 @@ class AIOpponent {
             startTime: null
         });
         
-        console.log(`🤖 AI QUEUED: ${buildingType} #${totalCount + 1} at position (${position.x}, ${position.y})`);
+        if (window.spLogger) {
+            window.spLogger.log('AI_BUILD_QUEUED', `AI queued ${buildingType}`, {
+                aiIndex: this.aiIndex,
+                buildingType: buildingType,
+                position: { x: position.x, y: position.y },
+                buildingNumber: totalCount + 1
+            });
+        }
     }
     
     // Process the building queue
@@ -201,7 +320,13 @@ class AIOpponent {
             type: buildingData.type
         };
         
-        console.log(`AI ${this.aiIndex} started building ${buildingData.type} at (${buildingData.position.x}, ${buildingData.position.y})`);
+        if (window.spLogger) {
+            window.spLogger.log('AI_BUILD_START', `AI started building`, {
+                aiIndex: this.aiIndex,
+                buildingType: buildingData.type,
+                position: { x: buildingData.position.x, y: buildingData.position.y }
+            });
+        }
     }
     
     // Get construction time for different building types
@@ -230,7 +355,12 @@ class AIOpponent {
             building.isUnderConstruction = false;
             building.constructionProgress = 1;
             
-            console.log(`AI ${this.aiIndex} completed building ${this.currentlyBuilding.type}`);
+            if (window.spLogger) {
+                window.spLogger.log('AI_BUILD_COMPLETE', `AI completed building`, {
+                    aiIndex: this.aiIndex,
+                    buildingType: this.currentlyBuilding.type
+                });
+            }
             
             this.currentlyBuilding = null;
             
@@ -241,7 +371,11 @@ class AIOpponent {
     
     // Start unit production after buildings are complete
     startUnitProduction() {
-        console.log(`AI ${this.aiIndex} finished building base, starting unit production`);
+        if (window.spLogger) {
+            window.spLogger.log('AI_BUILD_FINISH', `AI finished building base, starting unit production`, {
+                aiIndex: this.aiIndex
+            });
+        }
         this.unitProductionActive = true;
     }
 
@@ -411,30 +545,33 @@ class AIOpponent {
         
         let posIndex = 0;
         
-        // Create 2 supply depots
+        // Create 2 supply depots with proper construction
         for (let i = 0; i < 2; i++) {
             const pos = buildingPositions[posIndex++];
             const supply = BuildingFactory.create('supply', pos.x, pos.y, this.team);
             supply.id = `ai_supply_${this.team}_${aiIndex}_${i}_${Date.now()}`;
-            supply.isUnderConstruction = false;
+            supply.isUnderConstruction = true; // Must be constructed properly
+            supply.constructionStartTime = Date.now() + (i * 5000); // Stagger construction
             window.game.engine.addEntity(supply);
         }
         
-        // Create 2 reactors
+        // Create 2 reactors with proper construction
         for (let i = 0; i < 2; i++) {
             const pos = buildingPositions[posIndex++];
             const reactor = BuildingFactory.create('reactor', pos.x, pos.y, this.team);
             reactor.id = `ai_reactor_${this.team}_${aiIndex}_${i}_${Date.now()}`;
-            reactor.isUnderConstruction = false;
+            reactor.isUnderConstruction = true; // Must be constructed properly
+            reactor.constructionStartTime = Date.now() + ((i + 2) * 5000); // Stagger construction
             window.game.engine.addEntity(reactor);
         }
         
-        // Create 2 barracks
+        // Create 2 barracks with proper construction
         for (let i = 0; i < 2; i++) {
             const pos = buildingPositions[posIndex++];
             const barracks = BuildingFactory.create('barracks', pos.x, pos.y, this.team);
             barracks.id = `ai_barracks_${this.team}_${aiIndex}_${i}_${Date.now()}`;
-            barracks.isUnderConstruction = false;
+            barracks.isUnderConstruction = true; // Must be constructed properly
+            barracks.constructionStartTime = Date.now() + ((i + 4) * 5000); // Stagger construction
             window.game.engine.addEntity(barracks);
         }
         
@@ -537,7 +674,15 @@ class AIOpponent {
         const totalReactor = reactors + reactorUnderConstruction;
         const totalBarracks = barracks + barracksUnderConstruction;
         
-        console.log(`🤖 AI ECONOMY CHECK: Supply:${supplyDepots}+${supplyUnderConstruction}=${totalSupply}/2, Reactor:${reactors}+${reactorUnderConstruction}=${totalReactor}/2, Barracks:${barracks}+${barracksUnderConstruction}=${totalBarracks}/2`);
+        // Economy check - only log to spLogger for reduced spam
+        if (window.spLogger) {
+            window.spLogger.log('AI_ECONOMY_CHECK', 'AI economy status', {
+                aiIndex: this.aiIndex,
+                supplyDepots: `${totalSupply}/2`,
+                reactors: `${totalReactor}/2`,
+                barracks: `${totalBarracks}/2`
+            });
+        }
         
         // Log to single player logger
         if (window.spLogger) {
@@ -558,17 +703,76 @@ class AIOpponent {
         
         // Only rebuild if we're below the intended 2-building limit (including under construction)
         if (totalSupply < 2) {
-            console.log(`🤖 AI ECONOMY: Need to rebuild supply depot (${totalSupply}/2)`);
+            // Need to rebuild supply depot - log to spLogger only
+            if (window.spLogger) {
+                window.spLogger.log('AI_REBUILD', `AI needs to rebuild supply depot`, {
+                    aiIndex: this.aiIndex,
+                    currentCount: totalSupply,
+                    targetCount: 2
+                });
+            }
             this.buildBuilding('supply');
         } else if (totalReactor < 2) {
-            console.log(`🤖 AI ECONOMY: Need to rebuild reactor (${totalReactor}/2)`);
+            // Need to rebuild reactor - log to spLogger only
+            if (window.spLogger) {
+                window.spLogger.log('AI_REBUILD', `AI needs to rebuild reactor`, {
+                    aiIndex: this.aiIndex,
+                    currentCount: totalReactor,
+                    targetCount: 2
+                });
+            }
             this.buildBuilding('reactor');
         } else if (totalBarracks < 2) {
-            console.log(`🤖 AI ECONOMY: Need to rebuild barracks (${totalBarracks}/2)`);
+            // Need to rebuild barracks - log to spLogger only  
+            if (window.spLogger) {
+                window.spLogger.log('AI_REBUILD', `AI needs to rebuild barracks`, {
+                    aiIndex: this.aiIndex,
+                    currentCount: totalBarracks,
+                    targetCount: 2
+                });
+            }
             this.buildBuilding('barracks');
         }
         
+        // Check if we should upgrade the base for more building slots
+        this.manageBaseUpgrade();
+        
         this.economy.lastBuildingTime = currentTime;
+    }
+    
+    manageBaseUpgrade() {
+        // Check if AI should upgrade its base for more building slots
+        if (!window.game || !window.game.engine) return;
+        
+        // Get AI's base
+        const aiBase = this.getAIBuildings().find(b => b instanceof Base && !b.isDead);
+        if (!aiBase) return;
+        
+        // Check current building slot usage
+        const baseLayout = window.baseLayoutManager.getBaseLayout(this.team);
+        if (!baseLayout || !baseLayout.slots) return;
+        
+        const currentSlots = baseLayout.slots.length;
+        const occupiedSlots = baseLayout.slots.filter(slot => slot.isOccupied).length;
+        
+        // Upgrade if we're using most of our slots and have resources
+        if (occupiedSlots >= currentSlots - 1 && currentSlots < 7) { // Max 7 slots in game
+            // Check if AI has resources for upgrade (simplified check since AI doesn't track resources)
+            if (window.spLogger) {
+                window.spLogger.log('AI_BASE_UPGRADE', 'AI attempting base upgrade', {
+                    aiIndex: this.aiIndex,
+                    currentSlots: currentSlots,
+                    occupiedSlots: occupiedSlots,
+                    team: this.team
+                });
+            }
+            
+            // Perform the upgrade
+            const result = window.baseLayoutManager.upgradeBase(this.team);
+            if (result && result.slotsUnlocked > 0) {
+                console.log(`AI: Base upgraded! +${result.slotsUnlocked} slots unlocked (Total: ${result.totalSlots})`);
+            }
+        }
     }
     
     manageProduction() {
@@ -576,10 +780,16 @@ class AIOpponent {
         if (currentTime - this.production.productionTimer < this.production.productionInterval) return;
         
         // Find available barracks
+        // Get buildings that can produce units (Barracks + Base)
         const availableBarracks = this.getAIBuildings()
             .filter(b => b instanceof Barracks && !b.isProducing && !b.isUnderConstruction);
         
-        if (availableBarracks.length === 0) return;
+        const availableBases = this.getAIBuildings()
+            .filter(b => b instanceof Base && !b.isProducing && !b.isUnderConstruction);
+        
+        const allProductionBuildings = [...availableBarracks, ...availableBases];
+        
+        if (allProductionBuildings.length === 0) return;
         
         // FIXED: Check population limits before producing
         const currentAIPopulation = this.getCurrentAIPopulation();
@@ -587,12 +797,19 @@ class AIOpponent {
         
         // Don't produce if at or near population cap
         if (currentAIPopulation >= maxAIPopulation) {
-            console.log(`AI production stopped: Population at capacity (${currentAIPopulation}/${maxAIPopulation})`);
+            // Population at capacity - log to spLogger only
+            if (window.spLogger) {
+                window.spLogger.log('AI_POPULATION_CAP', 'AI production stopped: Population at capacity', {
+                    aiIndex: this.aiIndex,
+                    currentPopulation: currentAIPopulation,
+                    maxPopulation: maxAIPopulation
+                });
+            }
             return;
         }
         
-        // In legendary mode, produce from ALL available barracks simultaneously (if population allows)
-        const barracksToUse = this.isLegendaryMode ? availableBarracks : [availableBarracks[0]];
+        // In legendary mode, produce from ALL available production buildings simultaneously (if population allows)
+        const buildingsToUse = this.isLegendaryMode ? allProductionBuildings : [allProductionBuildings[0]];
         
         // Determine what to produce based on current army composition
         const aiUnits = this.getAIUnits();
@@ -636,17 +853,20 @@ class AIOpponent {
             return;
         }
         
-        // Produce units from selected barracks (respecting population limits)
-        barracksToUse.forEach(barracks => {
+        // Produce units from selected buildings (respecting population limits)
+        buildingsToUse.forEach(building => {
             // Double-check population before each production
             const newCurrentPop = this.getCurrentAIPopulation();
             if (newCurrentPop + unitCost.population <= maxAIPopulation) {
-                this.produceUnit(unitToProduce, barracks);
+                // Check if the building can produce the desired unit
+                if (this.canBuildingProduceUnit(building, unitToProduce)) {
+                    this.produceUnit(unitToProduce, building);
+                }
             }
         });
         
         if (this.isLegendaryMode) {
-            console.log(`🔥 LEGENDARY: Producing ${unitToProduce} from ${barracksToUse.length} barracks (Pop: ${currentAIPopulation}/${maxAIPopulation})`);
+            console.log(`🔥 LEGENDARY: Producing ${unitToProduce} from ${buildingsToUse.length} buildings (Pop: ${currentAIPopulation}/${maxAIPopulation})`);
         }
         
         this.production.productionTimer = currentTime;
@@ -1052,15 +1272,23 @@ class AIOpponent {
         return true;
     }
     
-    produceUnit(unitType, barracks) {
-        if (!barracks || barracks.isProducing) return;
+    canBuildingProduceUnit(building, unitType) {
+        // Check if the building can produce the specified unit type
+        if (building.canProduce && Array.isArray(building.canProduce)) {
+            return building.canProduce.includes(unitType);
+        }
+        return false;
+    }
+    
+    produceUnit(unitType, building) {
+        if (!building || building.isProducing) return;
         
         try {
-            // Add unit to barracks production queue using the same method as player
-            const success = barracks.addToProductionQueue(unitType, true); // Skip resource deduction for AI
+            // Add unit to building production queue using the same method as player
+            const success = building.addToProductionQueue(unitType, true); // Skip resource deduction for AI
             
             if (success) {
-                console.log(`AI: Queued ${unitType} for production`);
+                console.log(`AI: Queued ${unitType} for production from ${building.constructor.name}`);
             } else {
                 console.error(`AI: Failed to queue ${unitType} - production queue full or invalid unit type`);
             }

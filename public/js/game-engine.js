@@ -225,6 +225,11 @@ class GameEngine {
         // Render world border
         this.renderWorldBorder();
         
+        // Render building spots
+        if (window.baseLayoutManager) {
+            window.baseLayoutManager.render(this.ctx, this.camera);
+        }
+        
         // Render hover glow effects (before entities)
         this.renderHoverGlows();
         
@@ -572,7 +577,7 @@ class GameEngine {
             }
             
             this.selectedEntities.push(entity);
-            this.updateCommandPanelVisibility();
+            // Command panel removed - selection now only affects modal display
         }
     }
     
@@ -580,31 +585,13 @@ class GameEngine {
         const index = this.selectedEntities.indexOf(entity);
         if (index > -1) {
             this.selectedEntities.splice(index, 1);
-            this.updateCommandPanelVisibility();
+            // Selection cleared
         }
     }
     
     clearSelection() {
         this.selectedEntities = [];
-        this.updateCommandPanelVisibility();
-    }
-    
-    updateCommandPanelVisibility() {
-        const commandPanel = document.getElementById('commandPanel');
-        if (commandPanel) {
-            // Show panel if we have buildings selected
-            const hasSelectedBuildings = this.selectedEntities.some(entity => {
-                // Check if entity is a building by class inheritance
-                if (typeof Building !== 'undefined' && entity instanceof Building) {
-                    return true;
-                }
-                // Fallback checks for building types
-                return entity.constructor.name.includes('Building') || 
-                       entity.type === 'building' ||
-                       ['Base', 'Barracks', 'SupplyDepot', 'Reactor', 'Turret'].includes(entity.constructor.name);
-            });
-            commandPanel.style.display = hasSelectedBuildings ? 'block' : 'none';
-        }
+        // Command panel removed - selection now only affects modal display
     }
     
     moveCamera(dx, dy) {

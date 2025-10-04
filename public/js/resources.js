@@ -153,9 +153,27 @@ class ResourceManager {
         // Don't subtract power since it's a count from reactors, not spent
     }
     
-    // Helper method to get reactor cost based on current count
+    // Helper method to get reactor cost based on current count (including under construction)
     getReactorCost() {
-        return 250 + (this.reactorCount * 250); // 250, 500, 750, etc.
+        // Count ALL reactors (completed, under construction, and queued) for pricing
+        const totalReactorCount = this.getTotalReactorCount();
+        return 250 + (totalReactorCount * 250); // 250, 500, 750, etc.
+    }
+    
+    // Count all reactors including those under construction for pricing purposes
+    getTotalReactorCount() {
+        if (!window.game || !window.game.engine) return 0;
+        
+        const playerTeam = window.game.playerTeam || 'player';
+        const allReactors = window.game.engine.entities.filter(entity => 
+            entity instanceof Building && 
+            entity.constructor.name === 'Reactor' && 
+            entity.team === playerTeam && 
+            !entity.isDead
+            // Include under construction and queued reactors for pricing
+        );
+        
+        return allReactors.length;
     }
     
     // Helper method to get supply generation rate
